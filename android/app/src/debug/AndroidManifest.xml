@@ -1,0 +1,7 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    
+    <!-- ✅ صلاحيات الإنترنت (مطلوبة للتطبيقات التي تتصل بالإنترنت) -->
+    <uses-permission android:name="android.permission.INTERNET"/>
+    
+
+</manifest>

@@ -1,0 +1,104 @@
+class ApiConstants {
+  static const String baseUrl = 'https://lake-oaf-reappear.ngrok-free.dev';
+  static const String apiBaseUrl = '$baseUrl/api';
+
+  static const String login = '/api/auth/login';
+  static const String logout = '/api/auth/logout';
+  static const String user = '/api/auth/user';
+
+  // ✅ مسارات الأدمن الصحيحة
+  static const String adminDashboard = '/api/admin/dashboard';
+  static const String adminUsers = '/api/admin/users';
+  static const String adminPosts = '/api/admin/posts';
+  static const String adminNotifications = '/api/admin/notifications';
+  static const String adminAds = '/api/admin/ads';
+  static const String adminDevices = '/api/admin/devices';
+  static const String adminReports = '/api/admin/reports';
+
+  // ✅ مسارات التقارير
+  static const String adminReportsCommitments =
+      '/api/admin/reports/commitments';
+  static const String adminReportsWeights = '/api/admin/reports/weights';
+  static const String adminReportsIdealWeights =
+      '/api/admin/reports/ideal-weights';
+  static const String adminReportsExpiredSubs =
+      '/api/admin/reports/expired-subs';
+  static const String adminReportsExportPdf = '/api/admin/reports/export/pdf';
+  static const String adminReportsExportExcel =
+      '/api/admin/reports/export/excel';
+
+  // ✅ مسارات إدارة الأجهزة
+  static const String adminUserDevices = '/api/admin/users/{user_id}/devices';
+  static const String adminDevicesBlock =
+      '/api/admin/devices/{device_record_id}/block';
+  static const String adminDevicesApprove =
+      '/api/admin/devices/{device_record_id}/approve';
+  static const String adminDevicesDelete =
+      '/api/admin/devices/{device_record_id}';
+  static const String adminDevicesReset =
+      '/api/admin/devices/users/{user_id}/reset-devices';
+
+  // ✅ مسارات إدارة المستخدمين
+  static const String adminUserStatus = '/api/admin/users/{user_id}/status';
+  static const String adminUserSubscription =
+      '/api/admin/users/{user_id}/subscription';
+  static const String adminExtendSubscription =
+      '/api/admin/users/{user_id}/extend-subscription';
+
+  // ✅ مسارات المنشورات
+
+  static const String adminPostMedia = '/api/admin/posts/{post_id}/media';
+  static const String adminPostPublish = '/api/admin/posts/{post_id}/publish';
+  static const String adminPostSchedule = '/api/admin/posts/{post_id}/schedule';
+
+  // ✅ إعدادات الوسائط
+  static const int maxImageSizeMB = 5;
+  static const int maxVideoSizeMB = 50;
+  static const int maxAudioSizeMB = 15;
+  static const int imageQuality = 75;
+
+  // ✅ دالة ذكية لبناء الرابط الكامل
+  static String getFullMediaUrl(String? path) {
+    if (path == null || path.isEmpty) return '';
+    if (path.startsWith('http')) return path;
+
+    final cleanBase = baseUrl.replaceAll(RegExp(r'/api/?$'), '');
+
+    // تنظيف المسار
+    String cleanPath = path;
+    cleanPath = cleanPath.replaceAll(
+        RegExp(r'^(/storage/|storage/|/public/|public/)'), '');
+
+    // بناء الرابط النهائي
+    return '$cleanBase/storage/$cleanPath';
+  }
+
+  // ✅ دالة لإنشاء روابط بديلة (للمعاينة)
+  static List<String> getAlternativeUrls(String path) {
+    final cleanBase = baseUrl.replaceAll(RegExp(r'/api/?$'), '');
+    final alternatives = <String>[];
+
+    // الرابط الأصلي
+    alternatives.add('$cleanBase/storage/$path');
+
+    // رابط بدون storage
+    alternatives.add('$cleanBase/$path');
+
+    // رابط مع private-storage
+    alternatives.add('$cleanBase/private-storage/$path');
+
+    return alternatives;
+  }
+
+  static String replacePostId(String endpoint, int postId) {
+    return endpoint.replaceAll('{post_id}', postId.toString());
+  }
+
+  // ✅ مسارات الإشعارات
+  static const String adminNotificationsExtend =
+      '/api/admin/notifications/{notification_id}/extend';
+
+  // ✅ مسارات الإعلانات
+  static const String adminAdsToggle = '/api/admin/ads/{ad_id}/toggle';
+  static const String adminAdsClick = '/api/ads/{ad_id}/click';
+}
