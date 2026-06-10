@@ -98,115 +98,130 @@ class _UsersPageContentState extends State<_UsersPageContent> {
 
     return Scaffold(
       backgroundColor: AppColors.background,
-      body: Column(
+      body: Stack(
         children: [
-          // Header
-          Container(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          Column(
+            children: [
+              // Header
+              Container(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('إدارة المستخدمين',
-                        style: TextStyle(
-                            fontSize: 22, fontWeight: FontWeight.bold)),
-                    ElevatedButton.icon(
-                      onPressed: controller.isActionInProgress
-                          ? null
-                          : () => _showUserForm(context, controller),
-                      icon: const Icon(Icons.add, size: 18),
-                      label: const Text('إضافة مستخدم'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.accent,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 10),
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12)),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text('إدارة المستخدمين',
+                            style: TextStyle(
+                                fontSize: 22, fontWeight: FontWeight.bold)),
+                        ElevatedButton.icon(
+                          onPressed: controller.isActionInProgress
+                              ? null
+                              : () => _showUserForm(context, controller),
+                          icon: const Icon(Icons.add, size: 18),
+                          label: const Text('إضافة مستخدم'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.accent,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 16, vertical: 10),
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12)),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+
+                    // Search Bar
+                    TextField(
+                      onChanged: (value) =>
+                          setState(() => _searchQuery = value),
+                      decoration: InputDecoration(
+                        hintText: 'بحث عن مستخدم...',
+                        prefixIcon: Icon(Icons.search,
+                            size: 20, color: AppColors.textTertiary),
+                        border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide.none),
+                        filled: true,
+                        fillColor: AppColors.surface,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+
+                    // Filter Chips
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        children: [
+                          _buildFilterChip('الكل', 'all'),
+                          const SizedBox(width: 8),
+                          _buildFilterChip('نشط', 'active'),
+                          const SizedBox(width: 8),
+                          _buildFilterChip('منتهي', 'expired'),
+                          const SizedBox(width: 8),
+                          _buildFilterChip('ينتهي قريباً', 'expiring'),
+                        ],
                       ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 16),
+              ),
 
-                // Search Bar
-                TextField(
-                  onChanged: (value) => setState(() => _searchQuery = value),
-                  decoration: InputDecoration(
-                    hintText: 'بحث عن مستخدم...',
-                    prefixIcon: Icon(Icons.search,
-                        size: 20, color: AppColors.textTertiary),
-                    border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: BorderSide.none),
-                    filled: true,
-                    fillColor: AppColors.surface,
-                  ),
-                ),
-                const SizedBox(height: 12),
-
-                // Filter Chips
-                SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: Row(
-                    children: [
-                      _buildFilterChip('الكل', 'all'),
-                      const SizedBox(width: 8),
-                      _buildFilterChip('نشط', 'active'),
-                      const SizedBox(width: 8),
-                      _buildFilterChip('منتهي', 'expired'),
-                      const SizedBox(width: 8),
-                      _buildFilterChip('ينتهي قريباً', 'expiring'),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-          // Users Grid
-          Expanded(
-            child: controller.isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : _getFilteredUsers(controller.users).isEmpty
-                    ? _buildEmptyState()
-                    : GridView.builder(
-                        padding: const EdgeInsets.all(16),
-                        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: crossAxisCount,
-                          crossAxisSpacing: 16,
-                          mainAxisSpacing: 16,
-                          childAspectRatio: 0.9,
-                        ),
-                        itemCount: _getFilteredUsers(controller.users).length,
-                        itemBuilder: (context, index) {
-                          final user =
-                              _getFilteredUsers(controller.users)[index];
-                          final isDeletingThisUser = controller.isDeleting &&
-                              controller.deletingUserId ==
-                                  user['id'].toString();
-                          return UserCard(
-                            user: user,
-                            onEdit: () =>
-                                _showUserForm(context, controller, user: user),
-                            onExtend: () =>
-                                _showExtendDialog(context, controller, user),
-                            onEditSubscription: () =>
-                                _showEditSubscriptionDialog(
+              // Users Grid
+              Expanded(
+                child: controller.isLoading
+                    ? const Center(child: CircularProgressIndicator())
+                    : _getFilteredUsers(controller.users).isEmpty
+                        ? _buildEmptyState()
+                        : GridView.builder(
+                            padding: const EdgeInsets.all(16),
+                            gridDelegate:
+                                SliverGridDelegateWithFixedCrossAxisCount(
+                              crossAxisCount: crossAxisCount,
+                              crossAxisSpacing: 16,
+                              mainAxisSpacing: 16,
+                              childAspectRatio: 0.9,
+                            ),
+                            itemCount:
+                                _getFilteredUsers(controller.users).length,
+                            itemBuilder: (context, index) {
+                              final user =
+                                  _getFilteredUsers(controller.users)[index];
+                              final isDeletingThisUser =
+                                  controller.isDeleting &&
+                                      controller.deletingUserId ==
+                                          user['id'].toString();
+                              return UserCard(
+                                user: user,
+                                onEdit: () => _showUserForm(context, controller,
+                                    user: user),
+                                onExtend: () => _showExtendDialog(
                                     context, controller, user),
-                            onToggleDevice: () =>
-                                _toggleDevice(context, controller, user),
-                            onToggleStatus: () =>
-                                _toggleStatus(context, controller, user),
-                            onDelete: () =>
-                                _deleteUser(context, controller, user),
-                            isDeleting: isDeletingThisUser,
-                          );
-                        },
-                      ),
+                                onEditSubscription: () =>
+                                    _showEditSubscriptionDialog(
+                                        context, controller, user),
+                                onToggleDevice: () =>
+                                    _toggleDevice(context, controller, user),
+                                onToggleStatus: () =>
+                                    _toggleStatus(context, controller, user),
+                                onDelete: () =>
+                                    _deleteUser(context, controller, user),
+                                isDeleting: isDeletingThisUser,
+                              );
+                            },
+                          ),
+              ),
+            ],
           ),
+          if (controller.isActionInProgress)
+            Container(
+              color: Colors.black26,
+              child: const Center(
+                child: CircularProgressIndicator(),
+              ),
+            ),
         ],
       ),
     );
@@ -481,12 +496,6 @@ class _UsersPageContentState extends State<_UsersPageContent> {
               ElevatedButton(
                 onPressed: () async {
                   Navigator.pop(context);
-                  showDialog(
-                    context: context,
-                    barrierDismissible: false,
-                    builder: (context) =>
-                        const Center(child: CircularProgressIndicator()),
-                  );
 
                   final success = await controller.updateSubscription(
                     userId,
@@ -499,7 +508,6 @@ class _UsersPageContentState extends State<_UsersPageContent> {
                   );
 
                   if (context.mounted) {
-                    Navigator.pop(context);
                     if (success) {
                       await controller.refreshUserData(userId);
                       ScaffoldMessenger.of(context).showSnackBar(
@@ -592,15 +600,10 @@ class _UsersPageContentState extends State<_UsersPageContent> {
   Future<void> _extendSubscription(BuildContext context,
       UsersController controller, String userId, int days) async {
     Navigator.pop(context);
-    showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (context) => const Center(child: CircularProgressIndicator()));
 
     final success = await controller.extendSubscription(userId, days);
 
     if (context.mounted) {
-      Navigator.pop(context);
       if (success) {
         await controller.refreshUserData(userId);
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(

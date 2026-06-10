@@ -1,5 +1,6 @@
 // lib/features/posts/presentation/widgets/post_media_section.dart
 import 'dart:io';
+import 'package:admin_dashboard/features/posts/presentation/widgets/audio_recorder_widget.dart';
 import 'package:flutter/material.dart';
 import '../../../../core/constants/app_colors.dart';
 import 'media_upload_card.dart';
@@ -97,19 +98,20 @@ class PostMediaSection extends StatelessWidget {
           onClear: onVideoCleared,
         ),
         const SizedBox(height: 16),
-        MediaUploadCard(
-          title: 'الصوت',
-          icon: Icons.audiotrack,
-          color: Colors.orange,
-          file: audioFile,
-          url: audioUrl,
-          isImage: false,
-          isUploading: isUploadingAudio,
-          progress: audioProgress,
-          onFilePick: onAudioPicked,
-          onUrlSubmit: onAudioUrlSet,
-          onClear: onAudioCleared,
-        ),
+        if (audioFile != null || audioUrl != null || true)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 24),
+            child: AudioRecorderWidget(
+              existingFile: audioFile,
+              existingUrl: audioUrl,
+              onAudioChanged: (file, url) {
+                onAudioPicked(file!);
+                if (url != null) onAudioUrlSet(url);
+              },
+              isUploading: isUploadingAudio,
+              uploadProgress: audioProgress,
+            ),
+          ),
       ],
     );
   }

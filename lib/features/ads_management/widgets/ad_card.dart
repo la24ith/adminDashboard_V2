@@ -149,7 +149,7 @@ class _AdCardState extends State<AdCard> {
                             const Icon(Icons.trending_up,
                                 size: 14, color: Colors.white),
                             const SizedBox(width: 4),
-                            Text('${widget.ad ?? 0} نقرة',
+                            Text('${widget.ad.clickCount ?? 0} نقرة',
                                 style: const TextStyle(
                                     fontSize: 11, color: Colors.white)),
                           ],

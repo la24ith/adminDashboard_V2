@@ -10,6 +10,7 @@ class ApiConstants {
   static const String adminDashboard = '/api/admin/dashboard';
   static const String adminUsers = '/api/admin/users';
   static const String adminPosts = '/api/admin/posts';
+  static const String allusersinfo = '/api/admin/subscriptions';
   static const String adminNotifications = '/api/admin/notifications';
   static const String adminAds = '/api/admin/ads';
   static const String adminDevices = '/api/admin/devices';

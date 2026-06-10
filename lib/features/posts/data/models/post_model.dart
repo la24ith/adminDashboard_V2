@@ -160,15 +160,26 @@ class Post extends Equatable {
   String get displayDate =>
       publishedAt != null ? _formatDate(publishedAt!) : _formatDate(createdAt);
 
-  // ignore: cast_from_null_always_fails
-  PostMedia? get firstVideo =>
-      media.firstWhere((m) => m.isVideo, orElse: () => null as PostMedia);
-  // ignore: cast_from_null_always_fails
-  PostMedia? get firstAudio =>
-      media.firstWhere((m) => m.isAudio, orElse: () => null as PostMedia);
-  // ignore: cast_from_null_always_fails
-  PostMedia? get firstImage =>
-      media.firstWhere((m) => m.isImage, orElse: () => null as PostMedia);
+  PostMedia? get firstVideo {
+    for (final m in media) {
+      if (m.isVideo) return m;
+    }
+    return null;
+  }
+
+  PostMedia? get firstAudio {
+    for (final m in media) {
+      if (m.isAudio) return m;
+    }
+    return null;
+  }
+
+  PostMedia? get firstImage {
+    for (final m in media) {
+      if (m.isImage) return m;
+    }
+    return null;
+  }
 
   String? get videoUrl {
     final video = firstVideo;
@@ -260,4 +271,3 @@ class Post extends Equatable {
         media
       ];
 }
-

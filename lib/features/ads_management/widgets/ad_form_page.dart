@@ -5,7 +5,7 @@ import '../../../core/constants/app_colors.dart';
 
 class AdFormPage extends StatefulWidget {
   final Map<String, dynamic>? ad;
-  final Function(Map<String, dynamic>) onSave;
+  final Function(Map<String, dynamic>, File? image) onSave;
 
   const AdFormPage({super.key, this.ad, required this.onSave});
 
@@ -80,7 +80,6 @@ class _AdFormPageState extends State<AdFormPage> {
         _selectedImage = File(image.path);
         _imageUploadError = null;
       });
-      await _simulateImageUpload();
     }
   }
 
@@ -92,47 +91,6 @@ class _AdFormPageState extends State<AdFormPage> {
       setState(() {
         _selectedImage = File(image.path);
         _imageUploadError = null;
-      });
-      await _simulateImageUpload();
-    }
-  }
-
-  Future<void> _simulateImageUpload() async {
-    if (_selectedImage == null) return;
-
-    setState(() {
-      _isUploadingImage = true;
-      _imageUploadError = null;
-    });
-
-    try {
-      // هنا يمكنك استبدال هذا برفع الصورة الفعلي إلى الخادم
-      // مؤقتاً نستخدم رابط تجريبي
-      await Future.delayed(const Duration(seconds: 1));
-
-      // استخدام رابط تجريبي - استبدل هذا برفع الصورة الفعلي
-      final tempUrl =
-          'https://picsum.photos/id/${_selectedImage!.hashCode.abs() % 100}/400/300';
-
-      setState(() {
-        _imageUrlController.text = tempUrl;
-        _isUploadingImage = false;
-      });
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('تم رفع الصورة بنجاح'),
-            backgroundColor: AppColors.success,
-            behavior: SnackBarBehavior.floating,
-            duration: Duration(seconds: 1),
-          ),
-        );
-      }
-    } catch (e) {
-      setState(() {
-        _imageUploadError = 'فشل رفع الصورة: ${e.toString()}';
-        _isUploadingImage = false;
       });
     }
   }
@@ -191,13 +149,13 @@ class _AdFormPageState extends State<AdFormPage> {
       if (_linkUrlController.text.isNotEmpty)
         'link_url': _linkUrlController.text,
       if (_hasImage && _imageUrlController.text.isNotEmpty)
-        'image_url': _imageUrlController.text,
+        'image': _selectedImage,
     };
 
     print('📤 Sending ad data: $adData');
 
     try {
-      await widget.onSave(adData);
+      await widget.onSave(adData, _selectedImage);
 
       if (mounted) {
         Navigator.of(context).pop(true);

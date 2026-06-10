@@ -1,3 +1,6 @@
+import 'dart:io';
+
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import '../../../core/network/dio_client.dart';
 import '../../../core/constants/api_constants.dart';
@@ -57,17 +60,40 @@ class AdsController extends ChangeNotifier {
     }
   }
 
-  Future<bool> createAd(Map<String, dynamic> adData) async {
+  Future<bool> createAd(Map<String, dynamic> adData, File imageFile) async {
     if (_isActionInProgress) return false;
-
+    final dio = DioClient.instance;
+    final formData = FormData();
     _isActionInProgress = true;
     _error = null;
     _successMessage = null;
     notifyListeners();
 
     try {
-      final dio = DioClient.instance;
-      final response = await dio.post(ApiConstants.adminAds, data: adData);
+      adData.forEach((key, value) {
+        if (value != null) {
+          formData.fields.add(
+            MapEntry(key, value.toString()),
+          );
+        }
+      });
+
+      if (imageFile != null) {
+        formData.files.add(
+          MapEntry(
+            'image',
+            await MultipartFile.fromFile(
+              imageFile.path,
+              filename: imageFile.path.split('/').last,
+            ),
+          ),
+        );
+      }
+
+      final response = await DioClient.instance.post(
+        ApiConstants.adminAds,
+        data: formData,
+      );
 
       if (response.statusCode == 201 || response.statusCode == 200) {
         final newAd = response.data['data'] ?? response.data;

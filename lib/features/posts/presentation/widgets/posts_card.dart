@@ -57,7 +57,7 @@ class _PostCardState extends State<PostCard>
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: () => _navigateToDetails(context),
+      onTap: () => _navigateToDetails(context, widget.post),
       child: MouseRegion(
         onEnter: (_) {
           setState(() => _isHovered = true);
@@ -526,12 +526,12 @@ class _PostCardState extends State<PostCard>
     return '${date.day}/${date.month} ${date.hour}:${date.minute.toString().padLeft(2, '0')}';
   }
 
-  void _navigateToDetails(BuildContext context) {
+  void _navigateToDetails(BuildContext context, Post post) {
     Navigator.push(
       context,
       PageRouteBuilder(
         pageBuilder: (context, animation, secondaryAnimation) =>
-            PostDetailsPage(post: widget.post),
+            PostDetailsPage(post: post),
         transitionsBuilder: (context, animation, secondaryAnimation, child) {
           const begin = Offset(0.3, 0);
           const end = Offset.zero;

@@ -1,5 +1,6 @@
 // ads_management_page.dart
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../controllers/ads_controller.dart';
@@ -242,10 +243,11 @@ class _AdsPageContentState extends State<_AdsPageContent> {
       MaterialPageRoute(
         builder: (context) => AdFormPage(
           ad: ad?.toJson(), // تحويل AdModel إلى Map
-          onSave: (adData) async {
+          onSave: (adData, image) async {
             bool success;
+
             if (ad == null) {
-              success = await controller.createAd(adData);
+              success = await controller.createAd(adData, image!);
             } else {
               success = await controller.updateAd(ad.id.toString(), adData);
             }

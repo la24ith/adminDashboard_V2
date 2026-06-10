@@ -5,7 +5,7 @@ import '../state/posts_controller.dart';
 import 'post_form_page.dart';
 
 class PostEditorShell extends StatelessWidget {
-  final String? postId;
+  final int? postId;
 
   const PostEditorShell({super.key, this.postId});
 
@@ -19,7 +19,7 @@ class PostEditorShell extends StatelessWidget {
 }
 
 class _PostEditorContent extends StatelessWidget {
-  final String? postId;
+  final int? postId;
 
   const _PostEditorContent({required this.postId});
 

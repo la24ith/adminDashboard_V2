@@ -7,7 +7,7 @@ class ToggleMultiDevice {
 
   const ToggleMultiDevice(this.repository);
 
-  Future<Either<Failure, User>> call(String id) async {
+  Future<Either<Failure, User>> call(int id) async {
     return await repository.toggleMultiDevice(id);
   }
 }

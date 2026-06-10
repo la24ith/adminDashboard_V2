@@ -14,24 +14,24 @@ class ReportsController extends ChangeNotifier {
   Map<String, dynamic> _idealWeightsData = {};
   Map<String, dynamic> _expiredSubsData = {};
   List<Map<String, dynamic>> _usersList = [];
-  
+
   // ✅ إحصائيات محسوبة من البيانات
   int _totalUsers = 0;
   double _avgCommitment = 0.0;
   int _achievedGoal = 0;
   int _expiredSubscriptions = 0;
-  
+
   // حالات التحميل
   bool _isLoadingCommitments = false;
   bool _isLoadingWeights = false;
   bool _isLoadingIdealWeights = false;
   bool _isLoadingExpiredSubs = false;
   bool _isLoadingUsers = false;
-  
+
   // حالات التصدير
   bool _isExportingPDF = false;
   bool _isExportingExcel = false;
-  
+
   String? _error;
   String? _lastExportedPath;
 
@@ -41,22 +41,22 @@ class ReportsController extends ChangeNotifier {
   Map<String, dynamic> get idealWeightsData => _idealWeightsData;
   Map<String, dynamic> get expiredSubsData => _expiredSubsData;
   List<Map<String, dynamic>> get usersList => _usersList;
-  
+
   int get totalUsers => _totalUsers;
   double get avgCommitment => _avgCommitment;
   int get achievedGoal => _achievedGoal;
   int get expiredSubscriptions => _expiredSubscriptions;
-  
+
   bool get isLoadingCommitments => _isLoadingCommitments;
   bool get isLoadingWeights => _isLoadingWeights;
   bool get isLoadingIdealWeights => _isLoadingIdealWeights;
   bool get isLoadingExpiredSubs => _isLoadingExpiredSubs;
   bool get isLoadingUsers => _isLoadingUsers;
-  
+
   bool get isExportingPDF => _isExportingPDF;
   bool get isExportingExcel => _isExportingExcel;
   bool get isExporting => _isExportingPDF || _isExportingExcel;
-  
+
   String? get error => _error;
   String? get lastExportedPath => _lastExportedPath;
 
@@ -72,17 +72,16 @@ class ReportsController extends ChangeNotifier {
   }) async {
     try {
       final directory = await getTemporaryDirectory();
-      final fullFileName = fileExtension != null 
-          ? '$fileName.$fileExtension' 
-          : fileName;
+      final fullFileName =
+          fileExtension != null ? '$fileName.$fileExtension' : fileName;
       final filePath = '${directory.path}/$fullFileName';
       final file = File(filePath);
       await file.writeAsBytes(fileBytes);
-      
+
       debugPrint('📁 File saved at: $filePath');
-      
+
       final result = await OpenFile.open(filePath);
-      
+
       if (result.type == ResultType.done) {
         debugPrint('✅ File opened successfully: $fullFileName');
         return true;
@@ -90,7 +89,6 @@ class ReportsController extends ChangeNotifier {
         debugPrint('⚠️ Could not open file: ${result.message}');
         return false;
       }
-      
     } catch (e) {
       debugPrint('❌ Error opening file: $e');
       return false;
@@ -117,7 +115,9 @@ class ReportsController extends ChangeNotifier {
       final dio = DioClient.instance;
       final response = await dio.get<List<int>>(
         ApiConstants.adminReportsExportPdf,
-        options: Options(responseType: ResponseType.bytes),
+        options: Options(
+            responseType: ResponseType.bytes,
+            headers: {'Accept-Language': "ar"}),
       );
 
       if (response.statusCode != 200 || response.data == null) {
@@ -125,12 +125,12 @@ class ReportsController extends ChangeNotifier {
       }
 
       final bytes = Uint8List.fromList(response.data!);
-      final fileName = 'users_report_${DateTime.now().millisecondsSinceEpoch}.pdf';
+      final fileName =
+          'users_report_${DateTime.now().millisecondsSinceEpoch}.pdf';
       final path = await _saveFile(bytes: bytes, fileName: fileName);
-      
+
       _lastExportedPath = path;
       return path;
-      
     } catch (e) {
       debugPrint('❌ PDF Export error: $e');
       return null;
@@ -149,7 +149,9 @@ class ReportsController extends ChangeNotifier {
       final dio = DioClient.instance;
       final response = await dio.get<List<int>>(
         ApiConstants.adminReportsExportExcel,
-        options: Options(responseType: ResponseType.bytes),
+        options: Options(
+            responseType: ResponseType.bytes,
+            headers: {'Accept-Language': "ar"}),
       );
 
       if (response.statusCode != 200 || response.data == null) {
@@ -157,12 +159,12 @@ class ReportsController extends ChangeNotifier {
       }
 
       final bytes = Uint8List.fromList(response.data!);
-      final fileName = 'users_report_${DateTime.now().millisecondsSinceEpoch}.xlsx';
+      final fileName =
+          'users_report_${DateTime.now().millisecondsSinceEpoch}.xlsx';
       final path = await _saveFile(bytes: bytes, fileName: fileName);
-      
+
       _lastExportedPath = path;
       return path;
-      
     } catch (e) {
       debugPrint('❌ Excel Export error: $e');
       return null;
@@ -173,7 +175,7 @@ class ReportsController extends ChangeNotifier {
   }
 
   // ==================== تحميل التقارير من API ====================
-  
+
   Future<void> loadAllReports() async {
     loadCommitmentsReport();
     loadIdealWeightsReport();
@@ -192,16 +194,16 @@ class ReportsController extends ChangeNotifier {
 
       if (response.statusCode == 200) {
         final responseData = response.data;
-        
+
         // ✅ معالجة هيكل Pagination
         if (responseData.containsKey('data')) {
           final dataList = responseData['data'] as List;
-          
+
           if (dataList.isNotEmpty) {
             // ✅ أخذ أول عنصر فقط (لأن التقرير يعيد مصفوفة)
             final firstItem = dataList.first as Map<String, dynamic>;
             _commitmentsData = firstItem;
-            
+
             // ✅ استخراج القيم من العنصر الأول مباشرة
             _totalUsers = firstItem['total_users'] ?? 0;
             _avgCommitment = (firstItem['avg_commitment'] ?? 0.0).toDouble();
@@ -253,7 +255,7 @@ class ReportsController extends ChangeNotifier {
 
       if (response.statusCode == 200) {
         final responseData = response.data;
-        
+
         if (responseData.containsKey('data')) {
           final dataList = responseData['data'] as List;
           _weightsData = dataList.isNotEmpty ? dataList.first : {};
@@ -284,7 +286,7 @@ class ReportsController extends ChangeNotifier {
 
       if (response.statusCode == 200) {
         final responseData = response.data;
-        
+
         // ✅ معالجة هيكل Pagination
         if (responseData.containsKey('data')) {
           final dataList = responseData['data'] as List;
@@ -321,7 +323,7 @@ class ReportsController extends ChangeNotifier {
 
       if (response.statusCode == 200) {
         final responseData = response.data;
-        
+
         // ✅ معالجة هيكل Pagination
         if (responseData.containsKey('data')) {
           final dataList = responseData['data'] as List;
@@ -368,7 +370,7 @@ class ReportsController extends ChangeNotifier {
 
       if (response.statusCode == 200) {
         final responseData = response.data;
-        
+
         if (responseData.containsKey('data')) {
           _usersList = List<Map<String, dynamic>>.from(responseData['data']);
         } else if (responseData is List) {
@@ -376,7 +378,7 @@ class ReportsController extends ChangeNotifier {
         } else {
           _usersList = [];
         }
-        
+
         // ✅ تحديث إجمالي المستخدمين إذا لم يتم تعيينه من قبل
         if (_totalUsers == 0 && _usersList.isNotEmpty) {
           _totalUsers = _usersList.length;

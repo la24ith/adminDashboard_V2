@@ -5,10 +5,9 @@ abstract class UserRepository {
   Future<Either<Failure, List<User>>> getUsers();
   Future<Either<Failure, User>> addUser(User user);
   Future<Either<Failure, User>> updateUser(User user);
-  Future<Either<Failure, void>> deleteUser(String id);
-  Future<Either<Failure, User>> extendSubscription(
-      String id, DateTime newEndDate);
-  Future<Either<Failure, User>> toggleMultiDevice(String id);
+  Future<Either<Failure, void>> deleteUser(int id);
+  Future<Either<Failure, User>> extendSubscription(int id, DateTime newEndDate);
+  Future<Either<Failure, User>> toggleMultiDevice(int id);
 }
 
 class Failure {

@@ -42,7 +42,7 @@ class UserRepositoryImpl implements UserRepository {
   }
 
   @override
-  Future<Either<Failure, void>> deleteUser(String id) async {
+  Future<Either<Failure, void>> deleteUser(int id) async {
     try {
       localDataSource.deleteUser(id);
       return const Right(null);
@@ -53,7 +53,7 @@ class UserRepositoryImpl implements UserRepository {
 
   @override
   Future<Either<Failure, User>> extendSubscription(
-      String id, DateTime newEndDate) async {
+      int id, DateTime newEndDate) async {
     try {
       final users = localDataSource.getUsers();
       final user = users.firstWhere((u) => u.id == id);
@@ -76,7 +76,7 @@ class UserRepositoryImpl implements UserRepository {
   }
 
   @override
-  Future<Either<Failure, User>> toggleMultiDevice(String id) async {
+  Future<Either<Failure, User>> toggleMultiDevice(int id) async {
     try {
       final users = localDataSource.getUsers();
       final user = users.firstWhere((u) => u.id == id);

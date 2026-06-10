@@ -7,7 +7,7 @@ class ExtendSubscription {
 
   const ExtendSubscription(this.repository);
 
-  Future<Either<Failure, User>> call(String id, DateTime newEndDate) async {
+  Future<Either<Failure, User>> call(int id, DateTime newEndDate) async {
     return await repository.extendSubscription(id, newEndDate);
   }
 }

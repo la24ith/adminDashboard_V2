@@ -54,55 +54,57 @@ class UsersController extends ChangeNotifier {
 
     try {
       final dio = DioClient.instance;
-      final response = await dio.get(ApiConstants.adminUsers);
+      final response = await dio.get(ApiConstants.allusersinfo);
 
       if (response.statusCode == 200) {
-        final data = response.data['data'] ?? response.data;
-        _users = List<Map<String, dynamic>>.from(data);
+        final List<dynamic> data = response.data['data'] ?? [];
 
-        for (int i = 0; i < _users.length; i++) {
-          final userId = _users[i]['id'].toString();
-          final subscriptionDetails = await getUserSubscriptionDetails(userId);
+        _users = data.map<Map<String, dynamic>>((item) {
+          final user = item['user'] ?? {};
+          final subscription = item['subscription'] ?? {};
+          final computed = item['computed'] ?? {};
+          final devicesSummary = item['devices_summary'] ?? {};
 
-          if (subscriptionDetails != null) {
-            if (subscriptionDetails['subscription'] != null) {
-              final sub = subscriptionDetails['subscription'];
-              _users[i]['subscription_start'] = sub['start_date'];
-              _users[i]['subscription_end'] = sub['end_date'];
-              _users[i]['subscription_status'] = sub['status'];
-              _users[i]['plan_type'] = sub['plan_type'];
-              _users[i]['price'] = double.parse(sub['price'].toString());
-              _users[i]['max_devices'] = sub['max_devices'];
-            }
+          return {
+            // بيانات المستخدم
+            ...user,
 
-            if (subscriptionDetails['computed'] != null) {
-              final computed = subscriptionDetails['computed'];
-              _users[i]['is_active_now'] = computed['is_active_now'];
-              _users[i]['is_expired'] = computed['is_expired'];
-              _users[i]['days_remaining'] = computed['days_remaining'];
-              _users[i]['devices_used'] = computed['devices_used'];
-              _users[i]['devices_remaining'] = computed['devices_remaining'];
-            }
+            // بيانات الاشتراك
+            'subscription_id': subscription['id'],
+            'subscription_status': subscription['status'],
+            'plan_type': subscription['plan_type'],
+            'subscription_start': subscription['start_date'],
+            'subscription_end': subscription['end_date'],
+            'price': double.tryParse(
+                  subscription['price']?.toString() ?? '0',
+                ) ??
+                0.0,
+            'max_devices': subscription['max_devices'],
+            'is_multi_device': subscription['is_multi_device'],
 
-            if (subscriptionDetails['devices_summary'] != null) {
-              final devicesSummary = subscriptionDetails['devices_summary'];
-              _users[i]['total_devices'] = devicesSummary['total_devices'];
-              _users[i]['approved_devices'] =
-                  devicesSummary['approved_devices'];
-              _users[i]['pending_devices'] = devicesSummary['pending_devices'];
-              _users[i]['blocked_devices'] = devicesSummary['blocked_devices'];
-            }
-          }
-        }
+            // البيانات المحسوبة
+            'is_active_now': computed['is_active_now'],
+            'is_expired': computed['is_expired'],
+            'days_remaining': computed['days_remaining'],
+            'devices_used': computed['devices_used'],
+            'devices_remaining': computed['devices_remaining'],
+
+            // ملخص الأجهزة
+            'total_devices': devicesSummary['total_devices'],
+            'approved_devices': devicesSummary['approved_devices'],
+            'pending_devices': devicesSummary['pending_devices'],
+            'blocked_devices': devicesSummary['blocked_devices'],
+          };
+        }).toList();
       } else {
         throw Exception('فشل تحميل المستخدمين');
       }
     } catch (e) {
       _error = _handleApiError(e);
+    } finally {
+      _isLoading = false;
+      notifyListeners();
     }
-
-    _isLoading = false;
-    notifyListeners();
   }
 
   void _startAction() {
@@ -114,6 +116,7 @@ class UsersController extends ChangeNotifier {
 
   void _finishAction() {
     _isActionInProgress = false;
+    _isLoading = false;
     notifyListeners();
   }
 
@@ -214,9 +217,6 @@ class UsersController extends ChangeNotifier {
       _users[index]['devices_remaining'] = computed['devices_remaining'];
     }
   }
-
-  // ✅ نسخة مبسطة - إنشاء مستخدم فقط بدون اشتراك
-  // في users_controller.dart، قم بتحديث دوال معالجة الأخطاء
 
   String _handleApiError(dynamic error) {
     print('🔍 Raw error: $error');
@@ -562,6 +562,7 @@ class UsersController extends ChangeNotifier {
         _finishAction();
         return false;
       } else {
+        _finishAction();
         throw Exception('فشل تمديد الاشتراك');
       }
     } catch (e) {
@@ -629,6 +630,7 @@ class UsersController extends ChangeNotifier {
         _safeNotifyListeners();
         return true;
       } else {
+        _finishAction();
         throw Exception('فشل تحديث الاشتراك');
       }
     } catch (e) {
