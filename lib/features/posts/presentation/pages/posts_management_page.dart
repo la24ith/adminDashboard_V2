@@ -41,6 +41,9 @@ class _PostsPageContentState extends State<_PostsPageContent>
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<PostsController>().init();
+    });
     _animationController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 500),

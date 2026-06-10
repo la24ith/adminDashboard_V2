@@ -173,7 +173,7 @@ class _PostCardState extends State<PostCard>
       );
     }
 
-    final fullUrl = ApiConstants.getFullMediaUrl(url);
+    final fullUrl = ApiConstants.mediaUrl(url);
     return AnimatedContainer(
       duration: const Duration(milliseconds: 300),
       height: 180,

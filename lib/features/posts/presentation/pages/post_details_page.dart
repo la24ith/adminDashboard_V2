@@ -38,7 +38,7 @@ class _PostDetailsPageState extends State<PostDetailsPage> {
     }
 
     try {
-      final url = ApiConstants.getFullMediaUrl(video);
+      final url = ApiConstants.mediaUrl(video);
       debugPrint('🎬 VIDEO URL = $url');
 
       final controller = VideoPlayerController.networkUrl(Uri.parse(url));
@@ -162,8 +162,7 @@ class _PostDetailsPageState extends State<PostDetailsPage> {
                   fit: StackFit.expand,
                   children: [
                     CachedNetworkImage(
-                      imageUrl:
-                          ApiConstants.getFullMediaUrl(widget.post.thumbnail!),
+                      imageUrl: ApiConstants.mediaUrl(widget.post.thumbnail!),
                       fit: BoxFit.cover,
                       placeholder: (_, __) =>
                           Container(color: Colors.grey.shade200),
@@ -524,7 +523,7 @@ class _PostDetailsPageState extends State<PostDetailsPage> {
   }
 
   void _playAudio(String filePath) {
-    final url = ApiConstants.getFullMediaUrl(filePath);
+    final url = ApiConstants.mediaUrl(filePath);
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text('تشغيل الصوت: ${url.split('/').last}'),

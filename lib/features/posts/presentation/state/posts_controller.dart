@@ -29,6 +29,28 @@ class PostsController extends ChangeNotifier {
   final Map<String, bool> _uploadingMedia = {};
   final Map<String, double> _uploadProgressMap = {};
 
+  // ==================== LIFECYCLE SAFETY ====================
+  bool _isDisposed = false;
+
+  // Safe notifyListeners - prevents calls after dispose and during build
+  void _safeNotify() {
+    if (!_isDisposed) {
+      // Schedule microtask to avoid calling notifyListeners during build
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!_isDisposed) {
+          notifyListeners();
+        }
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _isDisposed = true;
+    // Clean up any resources if needed (e.g., cancel ongoing uploads)
+    super.dispose();
+  }
+
   // ==================== GETTERS ====================
 
   List<Post> get posts => _posts;
@@ -42,14 +64,16 @@ class PostsController extends ChangeNotifier {
   bool isUploadingMedia(String key) => _uploadingMedia[key] ?? false;
   double getUploadProgress(String key) => _uploadProgressMap[key] ?? 0.0;
 
-  PostsController() {
-    loadPosts();
+  PostsController() {}
+
+  Future<void> init() async {
+    await loadPosts();
   }
 
   // ==================== POSTS CRUD WITH PAGINATION ====================
 
   Future<void> loadPosts({bool forceRefresh = false}) async {
-    if (_isLoading) return;
+    if (_isLoading || _isDisposed) return;
 
     if (forceRefresh) {
       _resetPagination();
@@ -57,7 +81,7 @@ class PostsController extends ChangeNotifier {
 
     _isLoading = true;
     _error = null;
-    notifyListeners();
+    _safeNotify();
 
     try {
       final newPosts = await _repository.getPosts(
@@ -65,6 +89,8 @@ class PostsController extends ChangeNotifier {
         perPage: _postsPerPage,
         forceRefresh: forceRefresh,
       );
+
+      if (_isDisposed) return;
 
       if (forceRefresh) {
         _posts = newPosts;
@@ -75,25 +101,30 @@ class PostsController extends ChangeNotifier {
       _hasMore = newPosts.length == _postsPerPage;
       _error = null;
     } catch (e) {
+      if (_isDisposed) return;
       _error = _getErrorMessage(e);
     } finally {
-      _isLoading = false;
-      notifyListeners();
+      if (!_isDisposed) {
+        _isLoading = false;
+        _safeNotify();
+      }
     }
   }
 
   Future<void> loadMorePosts() async {
-    if (_isLoadingMore || !_hasMore || _isLoading) return;
+    if (_isLoadingMore || !_hasMore || _isLoading || _isDisposed) return;
 
     _isLoadingMore = true;
     _currentPage++;
-    notifyListeners();
+    _safeNotify();
 
     try {
       final newPosts = await _repository.getPosts(
         page: _currentPage,
         perPage: _postsPerPage,
       );
+
+      if (_isDisposed) return;
 
       if (newPosts.isNotEmpty) {
         _posts.addAll(newPosts);
@@ -102,11 +133,14 @@ class PostsController extends ChangeNotifier {
       _hasMore = newPosts.length == _postsPerPage;
       _error = null;
     } catch (e) {
+      if (_isDisposed) return;
       _error = _getErrorMessage(e);
       _hasMore = false; // في حالة الخطأ، لا نحاول تحميل المزيد
     } finally {
-      _isLoadingMore = false;
-      notifyListeners();
+      if (!_isDisposed) {
+        _isLoadingMore = false;
+        _safeNotify();
+      }
     }
   }
 
@@ -128,7 +162,7 @@ class PostsController extends ChangeNotifier {
     String? videoUrl,
     String? audioUrl,
   }) async {
-    if (_isActionInProgress) return false;
+    if (_isActionInProgress || _isDisposed) return false;
 
     _setActionState(true, clearMessages: true);
 
@@ -144,6 +178,8 @@ class PostsController extends ChangeNotifier {
       };
 
       final response = await dio.post(ApiConstants.adminPosts, data: postData);
+      if (_isDisposed) return false;
+
       if (response.statusCode != 201 && response.statusCode != 200) {
         throw Exception('فشل إنشاء المنشور');
       }
@@ -160,16 +196,21 @@ class PostsController extends ChangeNotifier {
         audioUrl,
       );
 
+      if (_isDisposed) return false;
+
       _successMessage = 'تم إنشاء المنشور بنجاح';
       _repository.clearCache();
       _resetPagination();
       await loadPosts(forceRefresh: true);
       return true;
     } catch (e) {
+      if (_isDisposed) return false;
       _error = _getErrorMessage(e);
       return false;
     } finally {
-      _setActionState(false);
+      if (!_isDisposed) {
+        _setActionState(false);
+      }
     }
   }
 
@@ -186,7 +227,7 @@ class PostsController extends ChangeNotifier {
     String? videoUrl,
     String? audioUrl,
   }) async {
-    if (_isActionInProgress) return false;
+    if (_isActionInProgress || _isDisposed) return false;
 
     _setActionState(true, clearMessages: true);
 
@@ -202,6 +243,7 @@ class PostsController extends ChangeNotifier {
 
       if (updateData.isNotEmpty) {
         await dio.put('/api/admin/posts/$postId', data: updateData);
+        if (_isDisposed) return false;
       }
 
       await _uploadAllMedia(
@@ -214,45 +256,55 @@ class PostsController extends ChangeNotifier {
         audioUrl,
       );
 
+      if (_isDisposed) return false;
+
       _successMessage = 'تم تحديث المنشور';
       _repository.clearCache();
       _resetPagination();
       await loadPosts(forceRefresh: true);
       return true;
     } catch (e) {
+      if (_isDisposed) return false;
       _error = _getErrorMessage(e);
       return false;
     } finally {
-      _setActionState(false);
+      if (!_isDisposed) {
+        _setActionState(false);
+      }
     }
   }
 
   Future<bool> deletePost(int postId) async {
-    if (_isActionInProgress) return false;
+    if (_isActionInProgress || _isDisposed) return false;
     _setActionState(true);
 
     try {
       final dio = DioClient.instance;
       final response = await dio.delete('/api/admin/posts/$postId');
 
+      if (_isDisposed) return false;
+
       if (response.statusCode == 200 || response.statusCode == 204) {
         _repository.deletePostFromCache(postId);
         _posts.removeWhere((post) => post.id == postId);
         _successMessage = 'تم حذف المنشور';
-        notifyListeners();
+        _safeNotify();
         return true;
       }
       throw Exception('فشل الحذف');
     } catch (e) {
+      if (_isDisposed) return false;
       _error = _getErrorMessage(e);
       return false;
     } finally {
-      _setActionState(false);
+      if (!_isDisposed) {
+        _setActionState(false);
+      }
     }
   }
 
   Future<bool> schedulePost(int postId, DateTime scheduledDate) async {
-    if (_isActionInProgress) return false;
+    if (_isActionInProgress || _isDisposed) return false;
     _setActionState(true);
 
     try {
@@ -263,6 +315,8 @@ class PostsController extends ChangeNotifier {
         'scheduled_for': scheduledDate.toIso8601String(),
       });
 
+      if (_isDisposed) return false;
+
       if (response.statusCode == 200) {
         _successMessage = 'تمت الجدولة بنجاح';
         _repository.clearCache();
@@ -272,10 +326,13 @@ class PostsController extends ChangeNotifier {
       }
       return false;
     } catch (e) {
+      if (_isDisposed) return false;
       _error = _getErrorMessage(e);
       return false;
     } finally {
-      _setActionState(false);
+      if (!_isDisposed) {
+        _setActionState(false);
+      }
     }
   }
 
@@ -291,38 +348,43 @@ class PostsController extends ChangeNotifier {
     String? audioUrl,
   ) async {
     // رفع الصورة المصغرة
-    if (thumbnailFile != null) {
+    if (thumbnailFile != null && !_isDisposed) {
       await _uploadMedia(postId, thumbnailFile, 'thumbnail');
-    } else if (thumbnailUrl != null && thumbnailUrl.isNotEmpty) {
+    } else if (thumbnailUrl != null &&
+        thumbnailUrl.isNotEmpty &&
+        !_isDisposed) {
       await _updatePostField(postId, 'thumbnail', thumbnailUrl);
     }
 
     // رفع الفيديو
-    if (videoFile != null) {
+    if (videoFile != null && !_isDisposed) {
       await _uploadMedia(postId, videoFile, 'video');
-    } else if (videoUrl != null && videoUrl.isNotEmpty) {
+    } else if (videoUrl != null && videoUrl.isNotEmpty && !_isDisposed) {
       await _updatePostField(postId, 'video_url', videoUrl);
     }
 
     // رفع الصوت
-    if (audioFile != null) {
+    if (audioFile != null && !_isDisposed) {
       await _uploadMedia(postId, audioFile, 'audio');
-    } else if (audioUrl != null && audioUrl.isNotEmpty) {
+    } else if (audioUrl != null && audioUrl.isNotEmpty && !_isDisposed) {
       await _updatePostField(postId, 'audio_url', audioUrl);
     }
   }
 
   Future<void> _uploadMedia(int postId, File file, String type) async {
+    if (_isDisposed) return;
+
     _uploadingMedia[type] = true;
     _uploadProgressMap[type] = 0.0;
-    notifyListeners();
+    _safeNotify();
 
     final dio = DioClient.instance;
 
     // ضغط الفيديو إذا كان حجمه كبيراً
     File uploadFile = file;
-    if (type == 'video') {
+    if (type == 'video' && !_isDisposed) {
       uploadFile = await _compressVideoIfNeeded(file);
+      if (_isDisposed) return;
     }
 
     final extension = uploadFile.path.split('.').last;
@@ -347,12 +409,21 @@ class PostsController extends ChangeNotifier {
           receiveTimeout: const Duration(seconds: 60),
         ),
         onSendProgress: (sent, total) {
-          if (total > 0) {
-            _uploadProgressMap[type] = sent / total;
-            notifyListeners();
+          if (!_isDisposed && total > 0) {
+            final newProgress = sent / total;
+            // Only notify if progress actually changed by more than 0.01 to reduce rebuilds
+            if ((_uploadProgressMap[type] ?? 0.0) - newProgress > 0.01 ||
+                (_uploadProgressMap[type] ?? 0.0) - newProgress < -0.01) {
+              _uploadProgressMap[type] = newProgress;
+              _safeNotify();
+            } else {
+              _uploadProgressMap[type] = newProgress;
+            }
           }
         },
       );
+
+      if (_isDisposed) return;
 
       if (response.statusCode == 201 || response.statusCode == 200) {
         final filePath = response.data['file_path'] ?? response.data['url'];
@@ -371,15 +442,17 @@ class PostsController extends ChangeNotifier {
               await _updatePostField(postId, 'audio_url', cleanPath);
               break;
           }
-          print('✅ $type uploaded: $cleanPath');
+          // Removed print
         }
       }
     } on DioException catch (e) {
-      print('❌ Upload error: ${e.message}');
+      if (_isDisposed) return;
       throw Exception(_handleUploadError(e));
     } finally {
-      _uploadingMedia[type] = false;
-      notifyListeners();
+      if (!_isDisposed) {
+        _uploadingMedia[type] = false;
+        _safeNotify();
+      }
 
       // تنظيف الملف المؤقت
       if (uploadFile.path != file.path && await uploadFile.exists()) {
@@ -390,7 +463,7 @@ class PostsController extends ChangeNotifier {
 
   Future<File> _compressVideoIfNeeded(File videoFile) async {
     final originalSizeMB = await videoFile.length() / (1024 * 1024);
-    print('📹 Original video size: ${originalSizeMB.toStringAsFixed(2)} MB');
+    // Removed print
 
     if (originalSizeMB > 10) {
       try {
@@ -403,13 +476,11 @@ class PostsController extends ChangeNotifier {
         );
         if (compressed != null && compressed.file != null) {
           final compressedFile = File(compressed.file!.path);
-          final compressedSizeMB =
-              await compressedFile.length() / (1024 * 1024);
-          print('📹 Compressed: ${compressedSizeMB.toStringAsFixed(2)} MB');
+          // Removed print
           return compressedFile;
         }
       } catch (e) {
-        print('⚠️ Compression failed: $e');
+        // Removed print
       }
     }
     return videoFile;
@@ -427,6 +498,7 @@ class PostsController extends ChangeNotifier {
   }
 
   Future<void> _updatePostField(int postId, String field, String value) async {
+    if (_isDisposed) return;
     final dio = DioClient.instance;
     await dio.put('/api/admin/posts/$postId', data: {field: value});
   }
@@ -474,31 +546,51 @@ class PostsController extends ChangeNotifier {
   }
 
   void _setActionState(bool inProgress, {bool clearMessages = false}) {
-    _isActionInProgress = inProgress;
-    if (clearMessages) {
-      _error = null;
-      _successMessage = null;
+    if (_isDisposed) return;
+
+    bool hasChanges = false;
+    if (_isActionInProgress != inProgress) {
+      _isActionInProgress = inProgress;
+      hasChanges = true;
     }
-    notifyListeners();
+
+    if (clearMessages) {
+      if (_error != null || _successMessage != null) {
+        _error = null;
+        _successMessage = null;
+        hasChanges = true;
+      }
+    }
+
+    if (hasChanges) {
+      _safeNotify();
+    }
   }
 
   void clearError() {
-    _error = null;
-    notifyListeners();
+    if (_isDisposed) return;
+    if (_error != null) {
+      _error = null;
+      _safeNotify();
+    }
   }
 
   void clearMessages() {
-    _error = null;
-    _successMessage = null;
-    notifyListeners();
+    if (_isDisposed) return;
+    if (_error != null || _successMessage != null) {
+      _error = null;
+      _successMessage = null;
+      _safeNotify();
+    }
   }
 
   // تحديث منشور في القائمة المحلية (للتحديث السريع)
   void _updatePostInList(Post updatedPost) {
+    if (_isDisposed) return;
     final index = _posts.indexWhere((p) => p.id == updatedPost.id);
     if (index != -1) {
       _posts[index] = updatedPost;
-      notifyListeners();
+      _safeNotify();
     }
   }
 }

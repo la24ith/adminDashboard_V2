@@ -48,7 +48,7 @@ class MediaItem {
   String get displayName =>
       localFile?.path.split('/').last ?? remoteUrl ?? 'ملف';
   String? get fullUrl =>
-      remoteUrl != null ? ApiConstants.getFullMediaUrl(remoteUrl!) : null;
+      remoteUrl != null ? ApiConstants.mediaUrl(remoteUrl!) : null;
 
   MediaItem copyWith({
     String? id,

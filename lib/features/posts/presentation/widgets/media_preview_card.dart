@@ -47,7 +47,7 @@ class MediaPreviewCard extends StatelessWidget {
         child: file != null
             ? Image.file(file!, fit: BoxFit.cover)
             : CachedNetworkImage(
-                imageUrl: ApiConstants.getFullMediaUrl(url!),
+                imageUrl: ApiConstants.mediaUrl(url!),
                 fit: BoxFit.cover,
                 placeholder: (_, __) => Container(
                   color: Colors.grey.shade100,

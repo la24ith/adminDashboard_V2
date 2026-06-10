@@ -45,7 +45,7 @@ class _PostDetailsPageState extends State<PostDetailsPage>
     }
 
     try {
-      final url = ApiConstants.getFullMediaUrl(video.filePath);
+      final url = ApiConstants.mediaUrl(video.filePath);
       final controller = VideoPlayerController.networkUrl(Uri.parse(url));
       await controller.initialize();
       controller.addListener(_videoListener);
@@ -163,8 +163,7 @@ class _PostDetailsPageState extends State<PostDetailsPage>
                   fit: StackFit.expand,
                   children: [
                     CachedNetworkImage(
-                      imageUrl:
-                          ApiConstants.getFullMediaUrl(widget.post.thumbnail!),
+                      imageUrl: ApiConstants.mediaUrl(widget.post.thumbnail!),
                       fit: BoxFit.cover,
                       placeholder: (_, __) => Container(
                         color: Colors.grey.shade200,
@@ -618,7 +617,7 @@ class _PostDetailsPageState extends State<PostDetailsPage>
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(18),
                     child: CachedNetworkImage(
-                      imageUrl: ApiConstants.getFullMediaUrl(image.filePath),
+                      imageUrl: ApiConstants.mediaUrl(image.filePath),
                       width: 140,
                       height: 140,
                       fit: BoxFit.cover,
@@ -662,7 +661,7 @@ class _PostDetailsPageState extends State<PostDetailsPage>
                 minScale: 0.5,
                 maxScale: 4,
                 child: CachedNetworkImage(
-                  imageUrl: ApiConstants.getFullMediaUrl(filePath),
+                  imageUrl: ApiConstants.mediaUrl(filePath),
                   placeholder: (_, __) => const Center(
                     child: CircularProgressIndicator(),
                   ),
@@ -727,7 +726,7 @@ class _PostDetailsPageState extends State<PostDetailsPage>
   }
 
   void _playAudio(String filePath) {
-    final url = ApiConstants.getFullMediaUrl(filePath);
+    final url = ApiConstants.mediaUrl(filePath);
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Row(

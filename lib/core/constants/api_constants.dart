@@ -57,20 +57,16 @@ class ApiConstants {
   static const int maxVideoSizeMB = 50;
   static const int maxAudioSizeMB = 15;
   static const int imageQuality = 75;
-
-  // ✅ دالة ذكية لبناء الرابط الكامل
-  static String getFullMediaUrl(String? path) {
+  static String mediaUrl(String? path) {
     if (path == null || path.isEmpty) return '';
+
     if (path.startsWith('http')) return path;
 
-    final cleanBase = baseUrl.replaceAll(RegExp(r'/api/?$'), '');
+    final cleanBase = baseUrl.replaceAll(RegExp(r'/$'), '');
 
-    // تنظيف المسار
-    String cleanPath = path;
-    cleanPath = cleanPath.replaceAll(
-        RegExp(r'^(/storage/|storage/|/public/|public/)'), '');
+    final cleanPath =
+        path.replaceAll(RegExp(r'^/'), '').replaceAll(RegExp(r'^storage/'), '');
 
-    // بناء الرابط النهائي
     return '$cleanBase/storage/$cleanPath';
   }
 
