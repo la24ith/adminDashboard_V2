@@ -203,7 +203,7 @@ class _HeaderSection extends StatelessWidget {
     final result = await Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => PostEditorShell(postId: post?.id),
+        builder: (_) => PostEditorShell(post: post),
       ),
     );
 
@@ -931,7 +931,7 @@ class _PostsGrid extends StatelessWidget {
     final result = await Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => PostEditorShell(postId: post?.id),
+        builder: (_) => PostEditorShell(post: post),
       ),
     );
     if (result == true) {
@@ -967,7 +967,7 @@ class _PostCardWrapper extends StatelessWidget {
     final result = await Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => PostEditorShell(postId: post.id),
+        builder: (_) => PostEditorShell(post: post),
       ),
     );
     if (result == true) {

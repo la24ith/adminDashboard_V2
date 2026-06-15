@@ -105,8 +105,12 @@ class PostMediaSection extends StatelessWidget {
               existingFile: audioFile,
               existingUrl: audioUrl,
               onAudioChanged: (file, url) {
-                onAudioPicked(file!);
-                if (url != null) onAudioUrlSet(url);
+                if (file != null) {
+                  onAudioPicked(file);
+                }
+                if (url != null && url.isNotEmpty) {
+                  onAudioUrlSet(url);
+                }
               },
               isUploading: isUploadingAudio,
               uploadProgress: audioProgress,

@@ -1,37 +1,32 @@
 // lib/features/posts/presentation/widgets/post_editor_shell.dart (Alternative)
+import 'package:admin_dashboard/features/posts/data/models/post_model.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../state/posts_controller.dart';
 import 'post_form_page.dart';
 
 class PostEditorShell extends StatelessWidget {
-  final int? postId;
+  final Post? post;
 
-  const PostEditorShell({super.key, this.postId});
+  const PostEditorShell({super.key, this.post});
 
   @override
   Widget build(BuildContext context) {
     return ChangeNotifierProvider(
       create: (context) => PostsController(),
-      child: _PostEditorContent(postId: postId),
+      child: _PostEditorContent(post: post),
     );
   }
 }
 
 class _PostEditorContent extends StatelessWidget {
-  final int? postId;
+  final Post? post;
 
-  const _PostEditorContent({required this.postId});
+  _PostEditorContent({required this.post});
 
   @override
   Widget build(BuildContext context) {
     final controller = context.watch<PostsController>();
-    final post = postId != null
-        ? controller.posts.firstWhere(
-            (p) => p.id == postId,
-            orElse: () => throw Exception('Post not found'),
-          )
-        : null;
 
     return PostFormPage(
       post: post,

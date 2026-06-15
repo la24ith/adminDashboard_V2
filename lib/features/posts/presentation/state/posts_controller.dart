@@ -1,12 +1,16 @@
-// lib/features/posts/presentation/state/posts_controller.dart
+import 'package:ffmpeg_kit_flutter_new/ffmpeg_kit.dart';
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:video_compress/video_compress.dart';
 import 'dart:io';
 import '../../../../core/network/dio_client.dart';
 import '../../../../core/constants/api_constants.dart';
 import '../../data/models/post_model.dart';
 import '../../data/repositories/post_repository.dart';
+import 'package:mime/mime.dart';
+import 'package:path/path.dart' as path;
+import 'package:path_provider/path_provider.dart';
 
 class PostsController extends ChangeNotifier {
   // Posts data
@@ -16,11 +20,33 @@ class PostsController extends ChangeNotifier {
   bool _hasMore = true;
   int _currentPage = 1;
   static const int _postsPerPage = 20;
-
+  bool _hasContext = false;
+  BuildContext? _context;
   // Actions state
   bool _isActionInProgress = false;
   String? _error;
   String? _successMessage;
+
+  void setContext(BuildContext context) {
+    _context = context;
+    _hasContext = true;
+  }
+
+  // ✅ دالة مساعدة للتحقق من وجود Context
+  bool get hasValidContext => _hasContext && _context != null;
+  // ✅ دالة مساعدة لعرض SnackBar بأمان
+  void _showErrorSnackBar(String message) {
+    if (_hasContext && _context != null) {
+      ScaffoldMessenger.of(_context!).showSnackBar(
+        SnackBar(
+          content: Text(message),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    }
+  }
 
   // Repository
   final PostRepository _repository = PostRepository();
@@ -370,6 +396,73 @@ class PostsController extends ChangeNotifier {
       await _updatePostField(postId, 'audio_url', audioUrl);
     }
   }
+// lib/features/posts/presentation/state/posts_controller.dart
+
+// ✅ دالة تحديد MIME type بشكل صحيح للملفات الصوتية
+  String _getCorrectMimeType(File file, String type) {
+    final path = file.path;
+    final extension = path.split('.').last.toLowerCase();
+
+    debugPrint(
+        '🔍 Detecting MIME for: $path, type: $type, extension: $extension');
+
+    // ✅ للصوت - تحديد دقيق
+    if (type == 'audio') {
+      // التحقق من امتداد الملف
+      if (extension == 'mp3') {
+        return 'audio/mpeg';
+      }
+      if (extension == 'm4a') {
+        return 'audio/mp4'; // ✅ M4A هو audio/mp4 وليس video/mp4
+      }
+      if (extension == 'aac') {
+        return 'audio/aac';
+      }
+      if (extension == 'wav') {
+        return 'audio/wav';
+      }
+      // التحقق من محتوى الملف إذا كان الامتداد غير واضح
+      return 'audio/mpeg';
+    }
+
+    // للفيديو
+    if (type == 'video') {
+      if (extension == 'mp4') return 'video/mp4';
+      if (extension == 'mov') return 'video/quicktime';
+      return 'video/mp4';
+    }
+
+    // للصور
+    if (type == 'image') {
+      if (extension == 'png') return 'image/png';
+      if (extension == 'jpg' || extension == 'jpeg') return 'image/jpeg';
+      return 'image/jpeg';
+    }
+
+    return 'application/octet-stream';
+  }
+
+  Future<File> _convertAudioFile(File file) async {
+    final extension = file.path.split('.').last.toLowerCase();
+
+    // إذا كان الملف بصيغة m4a، حوله إلى mp3
+    if (extension == 'm4a') {
+      try {
+        final tempDir = await getTemporaryDirectory();
+        final newPath = file.path.replaceAll('.m4a', '.mp3');
+        final mp3File = File(newPath);
+
+        // انسخ الملف مع تغيير الامتداد
+        await file.copy(mp3File.path);
+        debugPrint('✅ Converted m4a to mp3: ${mp3File.path}');
+        return mp3File;
+      } catch (e) {
+        debugPrint('⚠️ Conversion failed, using original: $e');
+        return file;
+      }
+    }
+    return file;
+  }
 
   Future<void> _uploadMedia(int postId, File file, String type) async {
     if (_isDisposed) return;
@@ -380,84 +473,113 @@ class PostsController extends ChangeNotifier {
 
     final dio = DioClient.instance;
 
-    // ضغط الفيديو إذا كان حجمه كبيراً
-    File uploadFile = file;
-    if (type == 'video' && !_isDisposed) {
-      uploadFile = await _compressVideoIfNeeded(file);
-      if (_isDisposed) return;
+    // تحديد نوع API
+    String apiType;
+    switch (type) {
+      case 'thumbnail':
+        apiType = 'image';
+        break;
+      case 'video':
+        apiType = 'video';
+        break;
+      case 'audio':
+        apiType = 'audio';
+        break;
+      default:
+        apiType = type;
     }
 
-    final extension = uploadFile.path.split('.').last;
+    final extension = file.path.split('.').last.toLowerCase();
     final fileName =
         '${type}_${DateTime.now().millisecondsSinceEpoch}.$extension';
+    File uploadFile = file;
+
+    if (!file.path.endsWith('.mp3')) {
+      uploadFile = await convertToMp3(file);
+    }
 
     final formData = FormData.fromMap({
-      'type': type == 'thumbnail' ? 'image' : type,
-      'file': await MultipartFile.fromFile(uploadFile.path, filename: fileName),
-      'sort_order': 0,
+      'type': apiType,
+      'file': await MultipartFile.fromFile(
+        uploadFile.path,
+        filename: path.basename(uploadFile.path),
+      ),
+      'sort_order': '0',
     });
 
     try {
       final endpoint =
           ApiConstants.replacePostId(ApiConstants.adminPostMedia, postId);
+
+      debugPrint('🌐 Endpoint: $endpoint');
+
       final response = await dio.post(
         endpoint,
         data: formData,
         options: Options(
-          headers: {'ngrok-skip-browser-warning': 'true'},
-          sendTimeout: const Duration(seconds: 60),
-          receiveTimeout: const Duration(seconds: 60),
+          headers: {
+            'Accept': 'application/json',
+            'ngrok-skip-browser-warning': 'true',
+          },
+          sendTimeout: const Duration(seconds: 120),
+          receiveTimeout: const Duration(seconds: 120),
         ),
         onSendProgress: (sent, total) {
           if (!_isDisposed && total > 0) {
-            final newProgress = sent / total;
-            // Only notify if progress actually changed by more than 0.01 to reduce rebuilds
-            if ((_uploadProgressMap[type] ?? 0.0) - newProgress > 0.01 ||
-                (_uploadProgressMap[type] ?? 0.0) - newProgress < -0.01) {
-              _uploadProgressMap[type] = newProgress;
-              _safeNotify();
-            } else {
-              _uploadProgressMap[type] = newProgress;
-            }
+            _uploadProgressMap[type] = sent / total;
+            _safeNotify();
           }
         },
       );
 
       if (_isDisposed) return;
 
-      if (response.statusCode == 201 || response.statusCode == 200) {
-        final filePath = response.data['file_path'] ?? response.data['url'];
-        if (filePath != null) {
-          String cleanPath = _cleanFilePath(filePath);
+      debugPrint('✅ Response status: ${response.statusCode}');
+      debugPrint('📦 Response data: ${response.data}');
 
-          // تحديث الحقل المناسب
-          switch (type) {
-            case 'thumbnail':
-              await _updatePostField(postId, 'thumbnail', cleanPath);
-              break;
-            case 'video':
-              await _updatePostField(postId, 'video_url', cleanPath);
-              break;
-            case 'audio':
-              await _updatePostField(postId, 'audio_url', cleanPath);
-              break;
-          }
-          // Removed print
+      if (response.statusCode == 201 || response.statusCode == 200) {
+        String? filePath = response.data['file_path'] ??
+            response.data['url'] ??
+            response.data['path'];
+
+        if (filePath != null && filePath.isNotEmpty) {
+          String cleanPath = _cleanFilePath(filePath);
+          String fieldName = type == 'thumbnail' ? 'thumbnail' : '${type}_url';
+          await _updatePostField(postId, fieldName, cleanPath);
+          debugPrint('✅ Uploaded: $cleanPath');
+
+          // ✅ عرض رسالة نجاح
+          _showErrorSnackBar('تم رفع ${_getTypeName(type)} بنجاح');
         }
       }
     } on DioException catch (e) {
-      if (_isDisposed) return;
-      throw Exception(_handleUploadError(e));
+      debugPrint('❌ Upload error: ${e.response?.statusCode}');
+      debugPrint('   Response: ${e.response?.data}');
+
+      // ✅ عرض رسالة خطأ
+      String errorMsg =
+          e.response?.data?['message'] ?? e.message ?? 'فشل الرفع';
+      _showErrorSnackBar(errorMsg);
+      rethrow;
     } finally {
       if (!_isDisposed) {
         _uploadingMedia[type] = false;
         _safeNotify();
       }
+    }
+  }
 
-      // تنظيف الملف المؤقت
-      if (uploadFile.path != file.path && await uploadFile.exists()) {
-        await uploadFile.delete();
-      }
+// ✅ دالة مساعدة للحصول على اسم النوع بالعربية
+  String _getTypeName(String type) {
+    switch (type) {
+      case 'thumbnail':
+        return 'الصورة المصغرة';
+      case 'video':
+        return 'الفيديو';
+      case 'audio':
+        return 'الصوت';
+      default:
+        return 'الملف';
     }
   }
 
@@ -487,13 +609,31 @@ class PostsController extends ChangeNotifier {
   }
 
   String _cleanFilePath(String path) {
-    String cleanPath = path.replaceAll(
-      RegExp(r'^(/storage/|storage/|/public/|public/)'),
-      '',
-    );
-    if (!cleanPath.startsWith('post-media')) {
+    // ✅ تنظيف المسار بشكل صحيح
+    String cleanPath = path;
+
+    // إزالة البادئات الزائدة إذا وجدت
+    List<String> prefixesToRemove = [
+      '/storage/',
+      'storage/',
+      '/public/',
+      'public/',
+      '/app/',
+      'app/',
+    ];
+
+    for (var prefix in prefixesToRemove) {
+      if (cleanPath.startsWith(prefix)) {
+        cleanPath = cleanPath.substring(prefix.length);
+      }
+    }
+
+    // ✅ التأكد من أن المسار يبدأ بـ post-media/
+    if (!cleanPath.startsWith('post-media/') && cleanPath.isNotEmpty) {
       cleanPath = 'post-media/$cleanPath';
     }
+
+    debugPrint('🧹 Cleaned path: $path -> $cleanPath');
     return cleanPath;
   }
 
@@ -592,5 +732,15 @@ class PostsController extends ChangeNotifier {
       _posts[index] = updatedPost;
       _safeNotify();
     }
+  }
+
+  Future<File> convertToMp3(File inputFile) async {
+    final outputPath = inputFile.path.replaceAll('.m4a', '.mp3');
+
+    await FFmpegKit.execute(
+      '-i ${inputFile.path} -codec:a libmp3lame -qscale:a 2 $outputPath',
+    );
+
+    return File(outputPath);
   }
 }
