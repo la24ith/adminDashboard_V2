@@ -1,10 +1,11 @@
-// lib/features/posts/presentation/pages/post_details_page.dart (النسخة المصححة)
+// lib/features/posts/presentation/pages/post_details_page.dart
 import 'package:admin_dashboard/core/constants/api_constants.dart';
 import 'package:admin_dashboard/core/constants/app_colors.dart';
 import 'package:admin_dashboard/features/posts/data/models/post_model.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
+import 'package:just_audio/just_audio.dart';
 
 class PostDetailsPage extends StatefulWidget {
   final Post post;
@@ -17,12 +18,17 @@ class PostDetailsPage extends StatefulWidget {
 
 class _PostDetailsPageState extends State<PostDetailsPage> {
   VideoPlayerController? _videoController;
+  AudioPlayer? _audioPlayer;
   bool _videoReady = false;
-  bool _isPlaying = false;
+  bool _isVideoPlaying = false;
+  bool _isAudioPlaying = false;
   bool _isSeeking = false;
-  Duration _position = Duration.zero;
-  Duration _duration = Duration.zero;
+  Duration _videoPosition = Duration.zero;
+  Duration _videoDuration = Duration.zero;
+  Duration _audioPosition = Duration.zero;
+  Duration _audioDuration = Duration.zero;
   String? _videoError;
+  String? _currentAudioUrl;
 
   @override
   void initState() {
@@ -31,14 +37,11 @@ class _PostDetailsPageState extends State<PostDetailsPage> {
   }
 
   Future<void> _initVideo() async {
-    final video = widget.post.videoUrl;
-    if (video == null || video.isEmpty) {
-      setState(() => _videoError = 'لا يوجد فيديو مرفق');
-      return;
-    }
+    final videoUrl = widget.post.videoUrl;
+    if (videoUrl == null || videoUrl.isEmpty) return;
 
     try {
-      final url = ApiConstants.mediaUrl(video);
+      final url = ApiConstants.mediaUrl(videoUrl);
       debugPrint('🎬 VIDEO URL = $url');
 
       final controller = VideoPlayerController.networkUrl(Uri.parse(url));
@@ -55,7 +58,7 @@ class _PostDetailsPageState extends State<PostDetailsPage> {
 
       setState(() {
         _videoReady = true;
-        _duration = controller.value.duration;
+        _videoDuration = controller.value.duration;
         _videoError = null;
       });
     } catch (e) {
@@ -69,9 +72,39 @@ class _PostDetailsPageState extends State<PostDetailsPage> {
 
     if (!_isSeeking) {
       setState(() {
-        _isPlaying = controller.value.isPlaying;
-        _position = controller.value.position;
+        _isVideoPlaying = controller.value.isPlaying;
+        _videoPosition = controller.value.position;
       });
+    }
+  }
+
+  Future<void> _initAudio(String url) async {
+    if (_audioPlayer != null && _currentAudioUrl == url) return;
+
+    _currentAudioUrl = url;
+    await _audioPlayer?.dispose();
+    _audioPlayer = AudioPlayer();
+
+    try {
+      await _audioPlayer!.setUrl(url);
+
+      _audioDuration = _audioPlayer!.duration ?? Duration.zero;
+
+      _audioPlayer!.positionStream.listen((position) {
+        if (mounted) {
+          setState(() => _audioPosition = position);
+        }
+      });
+
+      _audioPlayer!.playerStateStream.listen((state) {
+        if (mounted) {
+          setState(() => _isAudioPlaying = state.playing);
+        }
+      });
+
+      setState(() {});
+    } catch (e) {
+      debugPrint('Error loading audio: $e');
     }
   }
 
@@ -79,6 +112,7 @@ class _PostDetailsPageState extends State<PostDetailsPage> {
   void dispose() {
     _videoController?.removeListener(_videoListener);
     _videoController?.dispose();
+    _audioPlayer?.dispose();
     super.dispose();
   }
 
@@ -107,15 +141,9 @@ class _PostDetailsPageState extends State<PostDetailsPage> {
                       const SizedBox(height: 26),
                       _buildVideoSection(),
                     ],
-                    if (widget.post.hasAudio) ...[
+                    if (_getAudioUrl() != null) ...[
                       const SizedBox(height: 18),
                       _buildAudioSection(),
-                    ],
-                    // تعديل这部分 - استخدام hasVideo أو hasImages بناءً على وجود videoUrl
-                    if (widget.post.videoUrl == null &&
-                        _hasMultipleImages()) ...[
-                      const SizedBox(height: 18),
-                      _buildImagesSection(),
                     ],
                   ],
                 ),
@@ -127,10 +155,19 @@ class _PostDetailsPageState extends State<PostDetailsPage> {
     );
   }
 
-  bool _hasMultipleImages() {
-    // إذا كان لديك قائمة media، استخدمها
-    // وإلا استخدم false
-    return false;
+  String? _getAudioUrl() {
+    // ✅ التحقق من audioUrl مباشرة
+    if (widget.post.audioUrl != null && widget.post.audioUrl!.isNotEmpty) {
+      return ApiConstants.mediaUrl(widget.post.audioUrl!);
+    }
+    // ✅ التحقق من media array (بدون casting خاطئ)
+    try {
+      final audioMedia = widget.post.media.firstWhere((m) => m.isAudio);
+      return ApiConstants.mediaUrl(audioMedia.filePath);
+    } catch (e) {
+      // لا يوجد ملف صوتي في media array
+      return null;
+    }
   }
 
   SliverAppBar _buildHeader() {
@@ -215,7 +252,6 @@ class _PostDetailsPageState extends State<PostDetailsPage> {
           color: Colors.grey.shade700,
           background: Colors.grey.shade100,
         ),
-        // تعديل这部分 - إظهار عدد الملفات إذا كان موجوداً
         if (_getMediaCount() > 0)
           _metaChip(
             icon: Icons.attach_file_outlined,
@@ -298,9 +334,18 @@ class _PostDetailsPageState extends State<PostDetailsPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Row(
+        Row(
           children: [
-            Text('فيديو مرفق',
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.purple.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Icon(Icons.videocam, color: Colors.purple, size: 20),
+            ),
+            const SizedBox(width: 10),
+            const Text('فيديو مرفق',
                 style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
           ],
         ),
@@ -337,6 +382,11 @@ class _PostDetailsPageState extends State<PostDetailsPage> {
                             const SizedBox(height: 8),
                             Text(_videoError!,
                                 style: const TextStyle(color: Colors.white70)),
+                            const SizedBox(height: 12),
+                            ElevatedButton(
+                              onPressed: _initVideo,
+                              child: const Text('إعادة المحاولة'),
+                            ),
                           ],
                         )
                       : const CircularProgressIndicator(),
@@ -351,7 +401,7 @@ class _PostDetailsPageState extends State<PostDetailsPage> {
                         aspectRatio: _videoController!.value.aspectRatio,
                         child: VideoPlayer(_videoController!),
                       ),
-                      if (!_isPlaying)
+                      if (!_isVideoPlaying)
                         GestureDetector(
                           onTap: _toggleVideo,
                           child: Container(
@@ -379,36 +429,40 @@ class _PostDetailsPageState extends State<PostDetailsPage> {
                                 enabledThumbRadius: 6),
                           ),
                           child: Slider(
-                            value: _duration.inMilliseconds == 0
+                            value: _videoDuration.inMilliseconds == 0
                                 ? 0
-                                : _position.inMilliseconds
-                                        .clamp(0, _duration.inMilliseconds) /
-                                    _duration.inMilliseconds,
+                                : _videoPosition.inMilliseconds.clamp(
+                                        0, _videoDuration.inMilliseconds) /
+                                    _videoDuration.inMilliseconds,
                             onChanged: (value) {
                               final target = Duration(
                                 milliseconds:
-                                    (_duration.inMilliseconds * value).round(),
+                                    (_videoDuration.inMilliseconds * value)
+                                        .round(),
                               );
-                              setState(() => _position = target);
+                              setState(() => _videoPosition = target);
                             },
                             onChangeEnd: (value) async {
                               final target = Duration(
                                 milliseconds:
-                                    (_duration.inMilliseconds * value).round(),
+                                    (_videoDuration.inMilliseconds * value)
+                                        .round(),
                               );
                               _isSeeking = true;
                               await _videoController?.seekTo(target);
                               _isSeeking = false;
                             },
+                            activeColor: Colors.white,
+                            inactiveColor: Colors.white.withOpacity(0.3),
                           ),
                         ),
                         Row(
                           children: [
-                            Text(_formatDuration(_position),
+                            Text(_formatDuration(_videoPosition),
                                 style: const TextStyle(
                                     color: Colors.white70, fontSize: 12)),
                             const Spacer(),
-                            Text(_formatDuration(_duration),
+                            Text(_formatDuration(_videoDuration),
                                 style: const TextStyle(
                                     color: Colors.white70, fontSize: 12)),
                           ],
@@ -423,8 +477,8 @@ class _PostDetailsPageState extends State<PostDetailsPage> {
   }
 
   Widget _buildAudioSection() {
-    final audioUrl = widget.post.audioUrl;
-    if (audioUrl == null || audioUrl.isEmpty) return const SizedBox.shrink();
+    final audioUrl = _getAudioUrl();
+    if (audioUrl == null) return const SizedBox.shrink();
 
     return Container(
       padding: const EdgeInsets.all(18),
@@ -444,10 +498,11 @@ class _PostDetailsPageState extends State<PostDetailsPage> {
             width: 52,
             height: 52,
             decoration: BoxDecoration(
-              color: AppColors.accent.withOpacity(.08),
+              color: AppColors.primary.withOpacity(0.1),
               borderRadius: BorderRadius.circular(16),
             ),
-            child: Icon(Icons.audiotrack_rounded, color: AppColors.accent),
+            child: Icon(Icons.audiotrack_rounded,
+                color: AppColors.primary, size: 28),
           ),
           const SizedBox(width: 14),
           Expanded(
@@ -460,17 +515,31 @@ class _PostDetailsPageState extends State<PostDetailsPage> {
                 const SizedBox(height: 3),
                 Text(_getFileNameFromUrl(audioUrl),
                     style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                if (_audioDuration.inSeconds > 0)
+                  Text(_formatDuration(_audioDuration),
+                      style: const TextStyle(fontSize: 11, color: Colors.grey)),
               ],
             ),
           ),
           GestureDetector(
-            onTap: () => _playAudio(audioUrl),
+            onTap: () => _toggleAudio(audioUrl),
             child: Container(
-              width: 44,
-              height: 44,
+              width: 50,
+              height: 50,
               decoration: BoxDecoration(
-                  color: AppColors.accent, shape: BoxShape.circle),
-              child: const Icon(Icons.play_arrow_rounded, color: Colors.white),
+                gradient: LinearGradient(
+                  colors: [
+                    AppColors.primary,
+                    AppColors.primary.withOpacity(0.8)
+                  ],
+                ),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                _isAudioPlaying ? Icons.pause : Icons.play_arrow,
+                color: Colors.white,
+                size: 28,
+              ),
             ),
           ),
         ],
@@ -478,19 +547,21 @@ class _PostDetailsPageState extends State<PostDetailsPage> {
     );
   }
 
-  String _getFileNameFromUrl(String url) {
-    return url.split('/').last;
-  }
-
-  Widget _buildImagesSection() {
-    // إذا كان لديك قائمة صور، قم بعرضها هنا
-    // حالياً نعيد SizedBox فارغاً لأن Post model لا يحتوي على قائمة media
-    return const SizedBox.shrink();
-  }
-
   void _toggleVideo() {
     if (_videoController == null) return;
-    _isPlaying ? _videoController!.pause() : _videoController!.play();
+    _isVideoPlaying ? _videoController!.pause() : _videoController!.play();
+  }
+
+  void _toggleAudio(String url) async {
+    await _initAudio(url);
+
+    if (_audioPlayer == null) return;
+
+    if (_isAudioPlaying) {
+      await _audioPlayer!.pause();
+    } else {
+      await _audioPlayer!.play();
+    }
   }
 
   String _formatDuration(Duration duration) {
@@ -498,6 +569,10 @@ class _PostDetailsPageState extends State<PostDetailsPage> {
     final minutes = two(duration.inMinutes.remainder(60));
     final seconds = two(duration.inSeconds.remainder(60));
     return '$minutes:$seconds';
+  }
+
+  String _getFileNameFromUrl(String url) {
+    return url.split('/').last;
   }
 
   Color _statusColor() {
@@ -520,16 +595,5 @@ class _PostDetailsPageState extends State<PostDetailsPage> {
       default:
         return Icons.edit_note;
     }
-  }
-
-  void _playAudio(String filePath) {
-    final url = ApiConstants.mediaUrl(filePath);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('تشغيل الصوت: ${url.split('/').last}'),
-        behavior: SnackBarBehavior.floating,
-        duration: const Duration(seconds: 2),
-      ),
-    );
   }
 }

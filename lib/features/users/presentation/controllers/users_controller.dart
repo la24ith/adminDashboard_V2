@@ -1,21 +1,48 @@
-import 'dart:convert';
+// presentation/controllers/users_controller.dart
 
+import 'package:admin_dashboard/features/users/domain/usecases/add_user.dart';
 import 'package:flutter/material.dart';
-import 'package:dio/dio.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import '../../../../core/network/dio_client.dart';
-import '../../../../core/constants/api_constants.dart';
+import 'package:dartz/dartz.dart';
+import '../../domain/entities/user_subscription_entity.dart';
+import '../../domain/entities/subscription_entity.dart';
+import '../../domain/usecases/get_subscriptions.dart';
+import '../../domain/usecases/update_user.dart';
+import '../../domain/usecases/delete_user.dart';
+import '../../domain/usecases/extend_subscription.dart';
+import '../../domain/usecases/update_subscription.dart';
+import '../../domain/usecases/toggle_user_status.dart';
+import '../../domain/usecases/toggle_multi_device.dart';
+import '../../domain/repositories/user_repository.dart';
 
 class UsersController extends ChangeNotifier {
+  // ✅ Use Cases
+  final GetSubscriptions getSubscriptionsUseCase;
+  final CreateUser createUserUseCase;
+  final UpdateUser updateUserUseCase;
+  final DeleteUser deleteUserUseCase;
+  final ExtendSubscription extendSubscriptionUseCase;
+  final UpdateSubscription updateSubscriptionUseCase;
+  final ToggleUserStatus toggleUserStatusUseCase;
+  final ToggleMultiDevice toggleMultiDeviceUseCase;
+
+  // ✅ State
   List<Map<String, dynamic>> _users = [];
-  bool _isDeleting = false;
-  String? _deletingUserId;
   bool _isLoading = false;
   bool _isActionInProgress = false;
-
+  bool _isDeleting = false;
+  String? _deletingUserId;
   String? _error;
   String? _successMessage;
 
+  // ✅ Pagination State
+  int _currentPage = 1;
+  int _perPage = 20;
+  bool _hasMore = true;
+  bool _isLoadingMore = false;
+  String? _searchQuery;
+  String? _filterStatus;
+
+  // ✅ Getters
   List<Map<String, dynamic>> get users => _users;
   bool get isLoading => _isLoading;
   bool get isActionInProgress => _isActionInProgress;
@@ -23,90 +50,282 @@ class UsersController extends ChangeNotifier {
   String? get deletingUserId => _deletingUserId;
   String? get error => _error;
   String? get successMessage => _successMessage;
+  bool get hasMore => _hasMore;
+  bool get isLoadingMore => _isLoadingMore;
+  int get currentPage => _currentPage;
 
-  UsersController() {
+  UsersController({
+    required this.getSubscriptionsUseCase,
+    required this.createUserUseCase,
+    required this.updateUserUseCase,
+    required this.deleteUserUseCase,
+    required this.extendSubscriptionUseCase,
+    required this.updateSubscriptionUseCase,
+    required this.toggleUserStatusUseCase,
+    required this.toggleMultiDeviceUseCase,
+  }) {
     loadUsers();
   }
 
-  // ✅ جلب تفاصيل الاشتراك الكاملة
-  Future<Map<String, dynamic>?> getUserSubscriptionDetails(
-      String userId) async {
-    try {
-      final dio = DioClient.instance;
-      final response =
-          await dio.get('/api/admin/users/$userId/subscription-details');
-
-      if (response.statusCode == 200) {
-        return response.data;
-      }
-      return null;
-    } catch (e) {
-      print('❌ Error getting subscription details for user $userId: $e');
-      return null;
+  // ✅ 📥 تحميل المستخدمين (الصفحة الأولى أو التحديث)
+  Future<void> loadUsers({bool refresh = false}) async {
+    if (refresh) {
+      _currentPage = 1;
+      _hasMore = true;
+      _users.clear();
     }
-  }
 
-  // ✅ تحميل المستخدمين
-  Future<void> loadUsers() async {
-    _isLoading = true;
+    _isLoading = refresh || _users.isEmpty;
     _error = null;
     notifyListeners();
 
-    try {
-      final dio = DioClient.instance;
-      final response = await dio.get(ApiConstants.allusersinfo);
+    final result = await getSubscriptionsUseCase(
+      page: _currentPage,
+      perPage: _perPage,
+      search: _searchQuery,
+      status: _filterStatus,
+    );
 
-      if (response.statusCode == 200) {
-        final List<dynamic> data = response.data['data'] ?? [];
-
-        _users = data.map<Map<String, dynamic>>((item) {
-          final user = item['user'] ?? {};
-          final subscription = item['subscription'] ?? {};
-          final computed = item['computed'] ?? {};
-          final devicesSummary = item['devices_summary'] ?? {};
-
-          return {
-            // بيانات المستخدم
-            ...user,
-
-            // بيانات الاشتراك
-            'subscription_id': subscription['id'],
-            'subscription_status': subscription['status'],
-            'plan_type': subscription['plan_type'],
-            'subscription_start': subscription['start_date'],
-            'subscription_end': subscription['end_date'],
-            'price': double.tryParse(
-                  subscription['price']?.toString() ?? '0',
-                ) ??
-                0.0,
-            'max_devices': subscription['max_devices'],
-            'is_multi_device': subscription['is_multi_device'],
-
-            // البيانات المحسوبة
-            'is_active_now': computed['is_active_now'],
-            'is_expired': computed['is_expired'],
-            'days_remaining': computed['days_remaining'],
-            'devices_used': computed['devices_used'],
-            'devices_remaining': computed['devices_remaining'],
-
-            // ملخص الأجهزة
-            'total_devices': devicesSummary['total_devices'],
-            'approved_devices': devicesSummary['approved_devices'],
-            'pending_devices': devicesSummary['pending_devices'],
-            'blocked_devices': devicesSummary['blocked_devices'],
-          };
+    result.fold(
+      (failure) {
+        _error = failure.message;
+        _isLoading = false;
+        notifyListeners();
+      },
+      (paginated) {
+        final newUsers = paginated.data.map((entity) {
+          return entity.toUiMap();
         }).toList();
-      } else {
-        throw Exception('فشل تحميل المستخدمين');
-      }
-    } catch (e) {
-      _error = _handleApiError(e);
-    } finally {
-      _isLoading = false;
-      notifyListeners();
-    }
+
+        if (_currentPage == 1) {
+          _users = newUsers;
+        } else {
+          _users.addAll(newUsers);
+        }
+
+        _currentPage = paginated.currentPage + 1;
+        _hasMore = paginated.hasMore;
+        _isLoading = false;
+        notifyListeners();
+      },
+    );
   }
 
+  // ✅ 📥 تحميل المزيد (Pagination)
+  Future<void> loadMoreUsers() async {
+    if (_isLoadingMore || !_hasMore || _isLoading) return;
+
+    _isLoadingMore = true;
+    notifyListeners();
+
+    final result = await getSubscriptionsUseCase(
+      page: _currentPage,
+      perPage: _perPage,
+      search: _searchQuery,
+      status: _filterStatus,
+    );
+
+    result.fold(
+      (failure) {
+        _error = failure.message;
+        _isLoadingMore = false;
+        notifyListeners();
+      },
+      (paginated) {
+        final newUsers = paginated.data.map((entity) {
+          return entity.toUiMap();
+        }).toList();
+
+        _users.addAll(newUsers);
+        _currentPage = paginated.currentPage + 1;
+        _hasMore = paginated.hasMore;
+        _isLoadingMore = false;
+        notifyListeners();
+      },
+    );
+  }
+
+  // ✅ 🔍 البحث عن المستخدمين
+  Future<void> searchUsers(String query) async {
+    _searchQuery = query.trim().isEmpty ? null : query.trim();
+    _currentPage = 1;
+    _hasMore = true;
+    await loadUsers(refresh: true);
+  }
+
+  // ✅ 🏷️ فلترة المستخدمين
+  Future<void> filterUsers(String? status) async {
+    _filterStatus = (status == 'all' || status == null) ? null : status;
+    _currentPage = 1;
+    _hasMore = true;
+    await loadUsers(refresh: true);
+  }
+
+  // ✅ ✨ إنشاء مستخدم جديد
+  Future<bool> createUser(Map<String, dynamic> userData) async {
+    _startAction();
+
+    final result = await createUserUseCase(userData);
+
+    return result.fold(
+      (failure) {
+        _error = failure.message;
+        _finishAction();
+        return false;
+      },
+      (_) {
+        _successMessage = 'تم إنشاء المستخدم بنجاح';
+        loadUsers(refresh: true);
+        _finishAction();
+        return true;
+      },
+    );
+  }
+
+  // ✅ ✏️ تحديث مستخدم
+  Future<bool> updateUser(String userId, Map<String, dynamic> userData) async {
+    _startAction();
+
+    final result = await updateUserUseCase(int.parse(userId), userData);
+
+    return result.fold(
+      (failure) {
+        _error = failure.message;
+        _finishAction();
+        return false;
+      },
+      (_) {
+        _successMessage = 'تم تحديث المستخدم بنجاح';
+        loadUsers(refresh: true);
+        _finishAction();
+        return true;
+      },
+    );
+  }
+
+  // ✅ 🗑️ حذف مستخدم
+  Future<bool> deleteUser(String userId) async {
+    _isDeleting = true;
+    _deletingUserId = userId;
+    notifyListeners();
+
+    final result = await deleteUserUseCase(int.parse(userId));
+
+    return result.fold(
+      (failure) {
+        _error = failure.message;
+        _isDeleting = false;
+        _deletingUserId = null;
+        notifyListeners();
+        return false;
+      },
+      (_) {
+        _users.removeWhere((u) => u['id'].toString() == userId);
+        _successMessage = 'تم حذف المستخدم بنجاح';
+        _isDeleting = false;
+        _deletingUserId = null;
+        notifyListeners();
+        return true;
+      },
+    );
+  }
+
+  // ✅ ⏰ تمديد الاشتراك
+  Future<bool> extendSubscription(String userId, int days) async {
+    _startAction();
+
+    final result = await extendSubscriptionUseCase(int.parse(userId), days);
+
+    return result.fold(
+      (failure) {
+        _error = failure.message;
+        _finishAction();
+        return false;
+      },
+      (_) {
+        _successMessage = 'تم تمديد الاشتراك بنجاح (+$days يوماً)';
+        loadUsers(refresh: true);
+        _finishAction();
+        return true;
+      },
+    );
+  }
+
+  // ✅ 📝 تحديث الاشتراك
+  Future<bool> updateSubscription(
+      String userId, Map<String, dynamic> data) async {
+    _startAction();
+
+    final result = await updateSubscriptionUseCase(int.parse(userId), data);
+
+    return result.fold(
+      (failure) {
+        _error = failure.message;
+        _finishAction();
+        return false;
+      },
+      (_) {
+        _successMessage = 'تم تحديث الاشتراك بنجاح';
+        loadUsers(refresh: true);
+        _finishAction();
+        return true;
+      },
+    );
+  }
+
+  // ✅ 🔄 تبديل حالة المستخدم
+  Future<bool> toggleUserStatus(String userId, bool currentStatus) async {
+    _startAction();
+
+    final result =
+        await toggleUserStatusUseCase(int.parse(userId), currentStatus);
+
+    return result.fold(
+      (failure) {
+        _error = failure.message;
+        _finishAction();
+        return false;
+      },
+      (_) {
+        _successMessage =
+            currentStatus ? 'تم تعليق المستخدم' : 'تم تفعيل المستخدم';
+        loadUsers(refresh: true);
+        _finishAction();
+        return true;
+      },
+    );
+  }
+
+  // ✅ 🔄 تبديل وضع الأجهزة المتعددة
+  Future<bool> toggleMultiDevice(String userId, bool currentStatus) async {
+    _startAction();
+
+    final result =
+        await toggleMultiDeviceUseCase(int.parse(userId), currentStatus);
+
+    return result.fold(
+      (failure) {
+        _error = failure.message;
+        _finishAction();
+        return false;
+      },
+      (_) {
+        _successMessage = currentStatus
+            ? 'تم تعطيل الأجهزة المتعددة'
+            : 'تم تفعيل الأجهزة المتعددة';
+        loadUsers(refresh: true);
+        _finishAction();
+        return true;
+      },
+    );
+  }
+
+  // ✅ 🔄 تحديث بيانات مستخدم واحد
+  Future<void> refreshUserData(String userId) async {
+    await loadUsers(refresh: true);
+  }
+
+  // ✅ 🛠️ Helper methods
   void _startAction() {
     _isActionInProgress = true;
     _error = null;
@@ -116,571 +335,23 @@ class UsersController extends ChangeNotifier {
 
   void _finishAction() {
     _isActionInProgress = false;
-    _isLoading = false;
     notifyListeners();
-  }
-
-  String _translateField(String field) {
-    switch (field) {
-      case 'name':
-        return 'الاسم';
-      case 'email':
-        return 'البريد الإلكتروني';
-      case 'password':
-        return 'كلمة المرور';
-      case 'phone':
-        return 'رقم الهاتف';
-      case 'role':
-        return 'الدور';
-      case 'ideal_weight':
-        return 'الوزن المثالي';
-      case 'target_weight':
-        return 'الوزن المستهدف';
-      case 'current_weight':
-        return 'الوزن الحالي';
-      case 'height':
-        return 'الطول';
-      default:
-        return field;
-    }
-  }
-
-  String _translateErrorMessage(String message) {
-    final msg = message.toLowerCase();
-    if (msg.contains('email') &&
-        (msg.contains('taken') || msg.contains('exists'))) {
-      return 'البريد الإلكتروني مستخدم بالفعل';
-    }
-    if (msg.contains('password') && msg.contains('confirmation')) {
-      return 'كلمة المرور وتأكيدها غير متطابقين';
-    }
-    if (msg.contains('password') && msg.contains('min')) {
-      return 'كلمة المرور يجب أن تكون 6 أحرف على الأقل';
-    }
-    if (msg.contains('name') && msg.contains('required')) return 'الاسم مطلوب';
-    if (msg.contains('email') && msg.contains('required'))
-      return 'البريد الإلكتروني مطلوب';
-    if (msg.contains('email') && msg.contains('invalid'))
-      return 'البريد الإلكتروني غير صحيح';
-    if (msg.contains('phone')) return 'رقم الهاتف غير صحيح';
-    if (msg.contains('role')) return 'الدور المحدد غير صحيح';
-    if (msg.contains('unauthenticated'))
-      return 'انتهت صلاحية الجلسة. يرجى تسجيل الدخول مرة أخرى';
-    if (msg.contains('forbidden')) return 'ليس لديك صلاحية لتنفيذ هذا الإجراء';
-    if (msg.contains('timeout')) return 'انتهى وقت الاتصال. حاول مرة أخرى';
-    if (msg.contains('network')) return 'حدث خطأ في الاتصال. تحقق من الإنترنت';
-    return message;
-  }
-
-  // ✅ تحديث بيانات المستخدم
-  Future<void> refreshUserData(String userId) async {
-    try {
-      final dio = DioClient.instance;
-      final response = await dio.get('${ApiConstants.adminUsers}/$userId');
-
-      if (response.statusCode == 200) {
-        final updatedUser = response.data['data'] ?? response.data;
-        final index = _users.indexWhere((u) => u['id'].toString() == userId);
-
-        if (index != -1) {
-          _users[index] = {..._users[index], ...updatedUser};
-          final subscriptionDetails = await getUserSubscriptionDetails(userId);
-          if (subscriptionDetails != null) {
-            _updateUserSubscriptionData(index, subscriptionDetails);
-          }
-          _safeNotifyListeners();
-        }
-      }
-    } catch (e) {
-      print('❌ Error refreshing user data: $e');
-    }
-  }
-
-  void _updateUserSubscriptionData(
-      int index, Map<String, dynamic> subscriptionDetails) {
-    if (subscriptionDetails['subscription'] != null) {
-      final sub = subscriptionDetails['subscription'];
-      _users[index]['subscription_start'] = sub['start_date'];
-      _users[index]['subscription_end'] = sub['end_date'];
-      _users[index]['subscription_status'] = sub['status'];
-      _users[index]['plan_type'] = sub['plan_type'];
-      _users[index]['price'] = double.parse(sub['price'].toString());
-      _users[index]['max_devices'] = sub['max_devices'];
-    }
-
-    if (subscriptionDetails['computed'] != null) {
-      final computed = subscriptionDetails['computed'];
-      _users[index]['is_active_now'] = computed['is_active_now'];
-      _users[index]['is_expired'] = computed['is_expired'];
-      _users[index]['days_remaining'] = computed['days_remaining'];
-      _users[index]['devices_used'] = computed['devices_used'];
-      _users[index]['devices_remaining'] = computed['devices_remaining'];
-    }
-  }
-
-  String _handleApiError(dynamic error) {
-    print('🔍 Raw error: $error');
-
-    try {
-      if (error is DioException) {
-        if (error.response != null) {
-          final data = error.response!.data;
-          if (data is Map) {
-            // ✅ عرض رسائل التحقق من الصحة (Validation Errors)
-            if (data.containsKey('errors') && data['errors'] is Map) {
-              final errors = data['errors'] as Map;
-              final messages = <String>[];
-
-              // تجميع جميع رسائل الخطأ
-              errors.forEach((field, fieldErrors) {
-                if (fieldErrors is List && fieldErrors.isNotEmpty) {
-                  // ترجمة اسم الحقل
-                  final fieldName = _translateField(field);
-                  messages.add('$fieldName: ${fieldErrors.first}');
-                } else if (fieldErrors is String) {
-                  final fieldName = _translateField(field);
-                  messages.add('$fieldName: $fieldErrors');
-                }
-              });
-
-              if (messages.isNotEmpty) {
-                // عرض جميع الأخطاء في رسالة واحدة
-                return messages.join('\n');
-              }
-            }
-
-            // ✅ عرض رسالة الخطأ الرئيسية
-            if (data.containsKey('message')) {
-              final message = data['message'];
-              if (message is String && message.isNotEmpty) {
-                return _translateErrorMessage(message);
-              }
-            }
-          }
-        }
-
-        // أخطاء الاتصال
-        if (error.type == DioExceptionType.connectionTimeout) {
-          return 'انتهى وقت الاتصال. تأكد من اتصالك بالإنترنت';
-        }
-        if (error.type == DioExceptionType.receiveTimeout) {
-          return 'انتهى وقت الاستجابة. حاول مرة أخرى';
-        }
-        if (error.type == DioExceptionType.connectionError) {
-          return 'لا يمكن الاتصال بالخادم. تأكد من اتصالك بالإنترنت';
-        }
-      }
-
-      if (error is Map) {
-        if (error.containsKey('errors') && error['errors'] is Map) {
-          final errors = error['errors'] as Map;
-          final messages = <String>[];
-          errors.forEach((field, fieldErrors) {
-            if (fieldErrors is List && fieldErrors.isNotEmpty) {
-              final fieldName = _translateField(field);
-              messages.add('$fieldName: ${fieldErrors.first}');
-            }
-          });
-          if (messages.isNotEmpty) return messages.join('\n');
-        }
-        if (error.containsKey('message')) {
-          return _translateErrorMessage(error['message']);
-        }
-      }
-
-      if (error is String) {
-        return _translateErrorMessage(error);
-      }
-
-      return 'حدث خطأ غير متوقع. يرجى المحاولة مرة أخرى';
-    } catch (e) {
-      return 'حدث خطأ غير متوقع. يرجى المحاولة مرة أخرى';
-    }
-  }
-
-// ✅ تحسين دالة createUser لعرض رسائل الخطأ بشكل أفضل
-  Future<bool> createUser(Map<String, dynamic> userData) async {
-    _startAction();
-
-    try {
-      final dio = DioClient.instance;
-
-      // تنظيف البيانات قبل الإرسال
-      final Map<String, dynamic> cleanUserData = {};
-      userData.forEach((key, value) {
-        if (value != null && value.toString().isNotEmpty) {
-          cleanUserData[key] = value;
-        }
-      });
-
-      print('📤 Creating user with data: $cleanUserData');
-
-      final response = await dio.post(
-        ApiConstants.adminUsers,
-        data: cleanUserData,
-        options: Options(
-          validateStatus: (status) =>
-              status! < 500, // قبول جميع الأخطاء تحت 500
-        ),
-      );
-
-      print('📥 Response status: ${response.statusCode}');
-      print('📥 Response data: ${response.data}');
-
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        final newUser = response.data['data'] ?? response.data;
-        _users.insert(0, newUser);
-        _successMessage = 'تم إنشاء المستخدم بنجاح';
-        _finishAction();
-        _safeNotifyListeners();
-        return true;
-      } else {
-        // معالجة أخطاء الـ API
-        final errorMessage = _extractErrorMessage(response.data);
-        _error = errorMessage;
-        _finishAction();
-        _safeNotifyListeners();
-        return false;
-      }
-    } catch (e) {
-      print('❌ Exception: $e');
-      _error = _handleApiError(e);
-      _finishAction();
-      _safeNotifyListeners();
-      return false;
-    }
-  }
-
-// ✅ دالة مساعدة لاستخراج رسالة الخطأ من الـ Response
-  String _extractErrorMessage(dynamic data) {
-    try {
-      if (data is Map) {
-        // رسائل التحقق (Validation Errors)
-        if (data.containsKey('errors') && data['errors'] is Map) {
-          final errors = data['errors'] as Map;
-          final messages = <String>[];
-
-          errors.forEach((field, fieldErrors) {
-            final fieldName = _translateField(field);
-            if (fieldErrors is List && fieldErrors.isNotEmpty) {
-              messages.add('• $fieldName: ${fieldErrors.first}');
-            } else if (fieldErrors is String) {
-              messages.add('• $fieldName: $fieldErrors');
-            }
-          });
-
-          if (messages.isNotEmpty) {
-            return 'يرجى تصحيح الأخطاء التالية:\n${messages.join('\n')}';
-          }
-        }
-
-        // رسالة الخطأ الرئيسية
-        if (data.containsKey('message')) {
-          final message = data['message'];
-          if (message is String && message.isNotEmpty) {
-            return _translateErrorMessage(message);
-          }
-        }
-      }
-
-      return 'حدث خطأ غير متوقع. يرجى المحاولة مرة أخرى';
-    } catch (e) {
-      return 'حدث خطأ أثناء معالجة الطلب';
-    }
-  }
-
-// ✅ تحسين دالة updateUser
-  Future<bool> updateUser(String userId, Map<String, dynamic> userData) async {
-    _startAction();
-
-    try {
-      final dio = DioClient.instance;
-
-      // تنظيف البيانات
-      final Map<String, dynamic> cleanUserData = {};
-      userData.forEach((key, value) {
-        if (value != null && value.toString().isNotEmpty) {
-          cleanUserData[key] = value;
-        }
-      });
-
-      final response = await dio.put(
-        '${ApiConstants.adminUsers}/$userId',
-        data: cleanUserData,
-        options: Options(
-          validateStatus: (status) => status! < 500,
-        ),
-      );
-
-      if (response.statusCode == 200) {
-        final updatedUser = response.data['data'] ?? response.data;
-        final index = _users.indexWhere((u) => u['id'].toString() == userId);
-        if (index != -1) {
-          _users[index] = {..._users[index], ...updatedUser};
-        }
-        _successMessage = 'تم تحديث المستخدم بنجاح';
-        _finishAction();
-        _safeNotifyListeners();
-        return true;
-      } else {
-        final errorMessage = _extractErrorMessage(response.data);
-        _error = errorMessage;
-        _finishAction();
-        _safeNotifyListeners();
-        return false;
-      }
-    } catch (e) {
-      print('❌ Exception: $e');
-      _error = _handleApiError(e);
-      _finishAction();
-      _safeNotifyListeners();
-      return false;
-    }
-  }
-
-  // ✅ حذف مستخدم
-  Future<bool> deleteUser(String userId) async {
-    _isDeleting = true;
-    _deletingUserId = userId;
-    _safeNotify();
-
-    try {
-      final dio = DioClient.instance;
-      final response = await dio.delete('${ApiConstants.adminUsers}/$userId');
-
-      if (response.statusCode == 200 || response.statusCode == 204) {
-        _users.removeWhere((user) => user['id'].toString() == userId);
-        _successMessage = 'تم حذف المستخدم بنجاح';
-        await _saveSubscriptionsLocally();
-
-        _isDeleting = false;
-        _deletingUserId = null;
-        _safeNotify();
-        return true;
-      }
-      throw Exception('فشل حذف المستخدم');
-    } catch (e) {
-      _error = _handleApiError(e);
-      _isDeleting = false;
-      _deletingUserId = null;
-      _safeNotify();
-      return false;
-    }
-  }
-
-  // ✅ تبديل حالة المستخدم
-  Future<bool> toggleUserStatus(String userId, bool isActive) async {
-    _startAction();
-
-    try {
-      final dio = DioClient.instance;
-      final endpoint =
-          ApiConstants.adminUserStatus.replaceAll('{user_id}', userId);
-      final response = await dio.put(endpoint, data: {'is_active': !isActive});
-
-      if (response.statusCode == 200) {
-        final index = _users.indexWhere((u) => u['id'].toString() == userId);
-        if (index != -1) {
-          _users[index]['is_active'] = !isActive;
-        }
-        _successMessage = !isActive ? 'تم تفعيل المستخدم' : 'تم تعليق المستخدم';
-        _finishAction();
-        return true;
-      }
-      throw Exception('فشل تغيير حالة المستخدم');
-    } catch (e) {
-      _error = _handleApiError(e);
-      _finishAction();
-      return false;
-    }
-  }
-
-  // ✅ تبديل وضع الأجهزة المتعددة
-  Future<bool> toggleMultiDevice(String userId, bool currentStatus) async {
-    _startAction();
-
-    try {
-      final dio = DioClient.instance;
-      final endpoint =
-          ApiConstants.adminUserDevices.replaceAll('{user_id}', userId);
-      final response =
-          await dio.post('$endpoint/toggle', data: {'enabled': !currentStatus});
-
-      if (response.statusCode == 200) {
-        _successMessage = !currentStatus
-            ? 'تم تفعيل الأجهزة المتعددة'
-            : 'تم تعطيل الأجهزة المتعددة';
-        await loadUsers();
-        _finishAction();
-        return true;
-      }
-      throw Exception('فشل تغيير إعداد الأجهزة');
-    } catch (e) {
-      _error = _handleApiError(e);
-      _finishAction();
-      return false;
-    }
-  }
-
-  // ✅ إنشاء اشتراك
-
-  // ✅ تمديد الاشتراك
-  Future<bool> extendSubscription(String userId, int days) async {
-    _startAction();
-
-    try {
-      final dio = DioClient.instance;
-      final endpoint = '/api/admin/users/$userId/extend-subscription';
-      final response = await dio.post(endpoint, data: {'days': days});
-
-      if (response.statusCode == 200) {
-        final subscription = response.data['subscription'];
-        final computed = response.data['computed'];
-
-        final index = _users.indexWhere((u) => u['id'].toString() == userId);
-        if (index != -1) {
-          if (subscription != null) {
-            _users[index]['subscription_end'] = subscription['end_date'];
-            _users[index]['subscription_start'] = subscription['start_date'];
-            _users[index]['subscription_status'] = subscription['status'];
-          }
-          if (computed != null) {
-            _users[index]['days_remaining'] = computed['days_remaining'];
-            _users[index]['is_expired'] = computed['is_expired'];
-            _users[index]['is_active_now'] = computed['is_active_now'];
-          }
-          await refreshUserData(userId);
-        }
-
-        _successMessage = 'تم تمديد الاشتراك بنجاح (+$days يوماً)';
-        await _saveSubscriptionsLocally();
-        _finishAction();
-        _safeNotifyListeners();
-        return true;
-      } else if (response.statusCode == 404) {
-        _error = 'المستخدم ليس لديه اشتراك نشط';
-        _finishAction();
-        return false;
-      } else {
-        _finishAction();
-        throw Exception('فشل تمديد الاشتراك');
-      }
-    } catch (e) {
-      _error = _handleApiError(e);
-      _finishAction();
-      return false;
-    }
-  }
-
-  // ✅ تحديث الاشتراك
-  Future<bool> updateSubscription(
-    String userId, {
-    required DateTime startDate,
-    required DateTime endDate,
-    String planType = 'monthly',
-    String status = 'active',
-    double price = 199.99,
-    int maxDevices = 1,
-  }) async {
-    _startAction();
-
-    try {
-      final dio = DioClient.instance;
-      final endpoint = '/api/admin/users/$userId/subscription';
-
-      final data = {
-        'start_date': startDate.toIso8601String().split('T')[0],
-        'end_date': endDate.toIso8601String().split('T')[0],
-        'plan_type': planType,
-        'status': status,
-        'price': price,
-        'max_devices': maxDevices,
-      };
-
-      final response = await dio.put(endpoint, data: data);
-
-      if (response.statusCode == 200) {
-        final subscription = response.data['subscription'] ?? response.data;
-        final computed = response.data['computed'];
-
-        final index = _users.indexWhere((u) => u['id'].toString() == userId);
-        if (index != -1) {
-          _users[index]['subscription_start'] = subscription['start_date'];
-          _users[index]['subscription_end'] = subscription['end_date'];
-          _users[index]['subscription_status'] = subscription['status'];
-          _users[index]['plan_type'] = subscription['plan_type'];
-          _users[index]['price'] =
-              double.parse(subscription['price'].toString());
-          _users[index]['max_devices'] = subscription['max_devices'];
-
-          if (computed != null) {
-            _users[index]['days_remaining'] = computed['days_remaining'];
-            _users[index]['is_expired'] = computed['is_expired'];
-            _users[index]['is_active_now'] = computed['is_active_now'];
-            _users[index]['devices_used'] = computed['devices_used'];
-            _users[index]['devices_remaining'] = computed['devices_remaining'];
-          }
-
-          await refreshUserData(userId);
-        }
-
-        _successMessage = 'تم تحديث الاشتراك بنجاح';
-        await _saveSubscriptionsLocally();
-        _finishAction();
-        _safeNotifyListeners();
-        return true;
-      } else {
-        _finishAction();
-        throw Exception('فشل تحديث الاشتراك');
-      }
-    } catch (e) {
-      _error = _handleApiError(e);
-      _finishAction();
-      return false;
-    }
-  }
-
-  Future<void> _saveSubscriptionsLocally() async {
-    final prefs = await SharedPreferences.getInstance();
-    final subscriptionsMap = <String, dynamic>{};
-
-    for (var user in _users) {
-      final userId = user['id'].toString();
-      if (user.containsKey('subscription_end') &&
-          user['subscription_end'] != null) {
-        subscriptionsMap[userId] = {
-          'subscription_start': user['subscription_start'],
-          'subscription_end': user['subscription_end'],
-          'subscription_status': user['subscription_status'],
-          'plan_type': user['plan_type'],
-          'price': user['price'],
-          'max_devices': user['max_devices'],
-        };
-      }
-    }
-
-    await prefs.setString('subscriptions', jsonEncode(subscriptionsMap));
-  }
-
-  void _safeNotify() {
-    if (hasListeners) {
-      notifyListeners();
-    }
-  }
-
-  void _safeNotifyListeners() {
-    try {
-      if (hasListeners) {
-        notifyListeners();
-      }
-    } catch (e) {
-      print('⚠️ Error notifying listeners: $e');
-    }
   }
 
   void clearMessages() {
     _error = null;
     _successMessage = null;
     notifyListeners();
+  }
+
+  // ✅ 🗑️ مسح الـ Cache
+  Future<void> clearCache() async {
+    // يمكن إضافة دالة في الـ Repository
+    // await localDataSource.clearCache();
+  }
+
+  @override
+  void dispose() {
+    super.dispose();
   }
 }

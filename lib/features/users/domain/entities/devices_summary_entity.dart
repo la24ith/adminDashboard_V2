@@ -1,4 +1,5 @@
 // domain/entities/devices_summary_entity.dart
+
 class DevicesSummaryEntity {
   final int totalDevices;
   final int approvedDevices;
@@ -12,7 +13,24 @@ class DevicesSummaryEntity {
     required this.blockedDevices,
   });
 
-  /// Factory method للقيم الافتراضية
+  factory DevicesSummaryEntity.fromJson(Map<String, dynamic> json) {
+    return DevicesSummaryEntity(
+      totalDevices: json['total_devices'] ?? 0,
+      approvedDevices: json['approved_devices'] ?? 0,
+      pendingDevices: json['pending_devices'] ?? 0,
+      blockedDevices: json['blocked_devices'] ?? 0,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'total_devices': totalDevices,
+      'approved_devices': approvedDevices,
+      'pending_devices': pendingDevices,
+      'blocked_devices': blockedDevices,
+    };
+  }
+
   factory DevicesSummaryEntity.empty() {
     return const DevicesSummaryEntity(
       totalDevices: 0,
@@ -22,28 +40,22 @@ class DevicesSummaryEntity {
     );
   }
 
-  /// نسبة الأجهزة الموافقة
   double get approvalPercentage {
     if (totalDevices == 0) return 0.0;
     return approvedDevices / totalDevices;
   }
 
-  /// نسبة الأجهزة المعلقة
   double get pendingPercentage {
     if (totalDevices == 0) return 0.0;
     return pendingDevices / totalDevices;
   }
 
-  /// نسبة الأجهزة المحظورة
   double get blockedPercentage {
     if (totalDevices == 0) return 0.0;
     return blockedDevices / totalDevices;
   }
 
-  /// هل يوجد أجهزة معلقة تحتاج إلى مراجعة؟
   bool get hasPendingDevices => pendingDevices > 0;
-
-  /// هل تجاوز المستخدم الحد المسموح؟
   bool get hasExceededLimit => totalDevices > approvedDevices + pendingDevices;
 
   @override

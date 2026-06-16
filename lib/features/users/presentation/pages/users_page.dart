@@ -1,4 +1,9 @@
+// presentation/pages/users_page.dart
+
+import 'dart:async';
+
 import 'package:admin_dashboard/core/constants/app_colors.dart';
+import 'package:admin_dashboard/core/di/setup_locator.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../controllers/users_controller.dart';
@@ -11,7 +16,7 @@ class UsersPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ChangeNotifierProvider(
-      create: (context) => UsersController(),
+      create: (context) => sl<UsersController>(),
       child: const _UsersPageContent(),
     );
   }
@@ -27,6 +32,33 @@ class _UsersPageContent extends StatefulWidget {
 class _UsersPageContentState extends State<_UsersPageContent> {
   String _searchQuery = '';
   String _filterStatus = 'all';
+  final ScrollController _scrollController = ScrollController();
+  Timer? _searchTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController.addListener(_onScroll);
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    _searchTimer?.cancel();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    if (_scrollController.position.pixels >=
+        _scrollController.position.maxScrollExtent - 200) {
+      final controller = context.read<UsersController>();
+      if (!controller.isLoadingMore &&
+          controller.hasMore &&
+          !controller.isLoading) {
+        controller.loadMoreUsers();
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -61,7 +93,6 @@ class _UsersPageContentState extends State<_UsersPageContent> {
       }
 
       if (controller.error != null && !controller.isDeleting) {
-        // ✅ عرض رسالة الخطأ في SnackBar متعدد الأسطر
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Column(
@@ -135,12 +166,28 @@ class _UsersPageContentState extends State<_UsersPageContent> {
 
                     // Search Bar
                     TextField(
-                      onChanged: (value) =>
-                          setState(() => _searchQuery = value),
+                      onChanged: (value) {
+                        setState(() => _searchQuery = value);
+                        _searchTimer?.cancel();
+                        _searchTimer =
+                            Timer(const Duration(milliseconds: 500), () {
+                          controller.searchUsers(value);
+                        });
+                      },
                       decoration: InputDecoration(
                         hintText: 'بحث عن مستخدم...',
                         prefixIcon: Icon(Icons.search,
                             size: 20, color: AppColors.textTertiary),
+                        suffixIcon: _searchQuery.isNotEmpty
+                            ? IconButton(
+                                icon: Icon(Icons.clear,
+                                    size: 20, color: AppColors.textTertiary),
+                                onPressed: () {
+                                  setState(() => _searchQuery = '');
+                                  controller.searchUsers('');
+                                },
+                              )
+                            : null,
                         border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(12),
                             borderSide: BorderSide.none),
@@ -155,13 +202,14 @@ class _UsersPageContentState extends State<_UsersPageContent> {
                       scrollDirection: Axis.horizontal,
                       child: Row(
                         children: [
-                          _buildFilterChip('الكل', 'all'),
+                          _buildFilterChip('الكل', 'all', controller),
                           const SizedBox(width: 8),
-                          _buildFilterChip('نشط', 'active'),
+                          _buildFilterChip('نشط', 'active', controller),
                           const SizedBox(width: 8),
-                          _buildFilterChip('منتهي', 'expired'),
+                          _buildFilterChip('منتهي', 'expired', controller),
                           const SizedBox(width: 8),
-                          _buildFilterChip('ينتهي قريباً', 'expiring'),
+                          _buildFilterChip(
+                              'ينتهي قريباً', 'expiring', controller),
                         ],
                       ),
                     ),
@@ -173,9 +221,10 @@ class _UsersPageContentState extends State<_UsersPageContent> {
               Expanded(
                 child: controller.isLoading
                     ? const Center(child: CircularProgressIndicator())
-                    : _getFilteredUsers(controller.users).isEmpty
+                    : controller.users.isEmpty
                         ? _buildEmptyState()
                         : GridView.builder(
+                            controller: _scrollController,
                             padding: const EdgeInsets.all(16),
                             gridDelegate:
                                 SliverGridDelegateWithFixedCrossAxisCount(
@@ -184,11 +233,25 @@ class _UsersPageContentState extends State<_UsersPageContent> {
                               mainAxisSpacing: 16,
                               childAspectRatio: 0.9,
                             ),
-                            itemCount:
-                                _getFilteredUsers(controller.users).length,
+                            itemCount: controller.users.length +
+                                (controller.hasMore ? 1 : 0),
                             itemBuilder: (context, index) {
-                              final user =
-                                  _getFilteredUsers(controller.users)[index];
+                              // عرض مؤشر تحميل في آخر القائمة
+                              if (index >= controller.users.length) {
+                                return const Center(
+                                  child: Padding(
+                                    padding: EdgeInsets.all(16),
+                                    child: SizedBox(
+                                      width: 30,
+                                      height: 30,
+                                      child: CircularProgressIndicator(
+                                          strokeWidth: 2),
+                                    ),
+                                  ),
+                                );
+                              }
+
+                              final user = controller.users[index];
                               final isDeletingThisUser =
                                   controller.isDeleting &&
                                       controller.deletingUserId ==
@@ -227,12 +290,16 @@ class _UsersPageContentState extends State<_UsersPageContent> {
     );
   }
 
-  Widget _buildFilterChip(String label, String filter) {
+  Widget _buildFilterChip(
+      String label, String filter, UsersController controller) {
     final isSelected = _filterStatus == filter;
     return FilterChip(
       label: Text(label),
       selected: isSelected,
-      onSelected: (_) => setState(() => _filterStatus = filter),
+      onSelected: (_) {
+        setState(() => _filterStatus = filter);
+        controller.filterUsers(filter == 'all' ? null : filter);
+      },
       backgroundColor: AppColors.surface,
       selectedColor: AppColors.accent.withOpacity(0.1),
       checkmarkColor: AppColors.accent,
@@ -243,35 +310,6 @@ class _UsersPageContentState extends State<_UsersPageContent> {
       ),
       padding: const EdgeInsets.symmetric(horizontal: 10),
     );
-  }
-
-  List<Map<String, dynamic>> _getFilteredUsers(
-      List<Map<String, dynamic>> users) {
-    return users.where((user) {
-      final matchesSearch = _searchQuery.isEmpty ||
-          (user['name']?.toLowerCase().contains(_searchQuery.toLowerCase()) ??
-              false) ||
-          (user['email']?.toLowerCase().contains(_searchQuery.toLowerCase()) ??
-              false);
-
-      bool matchesFilter = true;
-      switch (_filterStatus) {
-        case 'active':
-          matchesFilter = (user['is_active'] ?? false) &&
-              (user['subscription_status'] != 'expired');
-          break;
-        case 'expired':
-          matchesFilter = user['subscription_status'] == 'expired';
-          break;
-        case 'expiring':
-          final daysRemaining = user['days_remaining'] ?? 0;
-          matchesFilter = daysRemaining > 0 && daysRemaining <= 7;
-          break;
-        default:
-          matchesFilter = true;
-      }
-      return matchesSearch && matchesFilter;
-    }).toList();
   }
 
   Widget _buildEmptyState() {
@@ -295,6 +333,9 @@ class _UsersPageContentState extends State<_UsersPageContent> {
                   _searchQuery = '';
                   _filterStatus = 'all';
                 });
+                final controller = context.read<UsersController>();
+                controller.searchUsers('');
+                controller.filterUsers(null);
               },
               child: const Text('مسح الفلتر'),
             ),
@@ -303,6 +344,7 @@ class _UsersPageContentState extends State<_UsersPageContent> {
     );
   }
 
+  // ✅ دوال العرض (نفسها موجودة في الملف الأصلي)
   Future<void> _showUserForm(BuildContext context, UsersController controller,
       {Map<String, dynamic>? user}) async {
     final result = await Navigator.push<bool>(
@@ -326,7 +368,7 @@ class _UsersPageContentState extends State<_UsersPageContent> {
     );
 
     if (result == true) {
-      await controller.loadUsers();
+      await controller.loadUsers(refresh: true);
       if (context.mounted) {
         ScaffoldMessenger.of(context).clearSnackBars();
         ScaffoldMessenger.of(context).showSnackBar(
@@ -350,15 +392,11 @@ class _UsersPageContentState extends State<_UsersPageContent> {
     final userId = user['id'].toString();
     final startDateController = TextEditingController(
         text: user['subscription_start'] != null
-            ? DateTime.parse(user['subscription_start'])
-                .toIso8601String()
-                .split('T')[0]
+            ? user['subscription_start']
             : DateTime.now().toIso8601String().split('T')[0]);
     final endDateController = TextEditingController(
         text: user['subscription_end'] != null
-            ? DateTime.parse(user['subscription_end'])
-                .toIso8601String()
-                .split('T')[0]
+            ? user['subscription_end']
             : DateTime.now()
                 .add(const Duration(days: 30))
                 .toIso8601String()
@@ -499,12 +537,14 @@ class _UsersPageContentState extends State<_UsersPageContent> {
 
                   final success = await controller.updateSubscription(
                     userId,
-                    startDate: DateTime.parse(startDateController.text),
-                    endDate: DateTime.parse(endDateController.text),
-                    planType: planTypeController.text,
-                    status: status,
-                    price: double.parse(priceController.text),
-                    maxDevices: int.parse(maxDevicesController.text),
+                    {
+                      'start_date': startDateController.text,
+                      'end_date': endDateController.text,
+                      'plan_type': planTypeController.text,
+                      'status': status,
+                      'price': double.parse(priceController.text),
+                      'max_devices': int.parse(maxDevicesController.text),
+                    },
                   );
 
                   if (context.mounted) {

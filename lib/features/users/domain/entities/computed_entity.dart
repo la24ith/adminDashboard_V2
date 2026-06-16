@@ -1,4 +1,5 @@
 // domain/entities/computed_entity.dart
+
 class ComputedEntity {
   final bool isActiveNow;
   final bool isExpired;
@@ -14,7 +15,27 @@ class ComputedEntity {
     required this.devicesRemaining,
   });
 
-  /// Factory method للقيم الافتراضية (مثلاً عند عدم وجود اشتراك)
+  factory ComputedEntity.fromJson(Map<String, dynamic> json) {
+    return ComputedEntity(
+      isActiveNow: json['is_active_now'] ?? false,
+      isExpired: json['is_expired'] ?? true,
+      daysRemaining: json['days_remaining'] ?? 0,
+      devicesUsed: json['devices_used'] ?? 0,
+      devicesRemaining: json['devices_remaining'] ?? 0,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'is_active_now': isActiveNow,
+      'is_expired': isExpired,
+      'days_remaining': daysRemaining,
+      'devices_used': devicesUsed,
+      'devices_remaining': devicesRemaining,
+    };
+  }
+
+  /// Factory method للقيم الافتراضية
   factory ComputedEntity.empty() {
     return const ComputedEntity(
       isActiveNow: false,
@@ -25,14 +46,9 @@ class ComputedEntity {
     );
   }
 
-  /// للتحقق من صلاحية المستخدم للوصول إلى الميزات
   bool get hasValidSubscription =>
       isActiveNow && !isExpired && daysRemaining > 0;
-
-  /// هل يمكن إضافة جهاز جديد؟
   bool get canAddDevice => devicesRemaining > 0;
-
-  /// نسبة استخدام الأجهزة (لـ UI Progress indicators)
   double get devicesUsagePercentage {
     if (devicesUsed + devicesRemaining == 0) return 0.0;
     final total = devicesUsed + devicesRemaining;

@@ -1,3 +1,5 @@
+// domain/usecases/delete_user.dart
+
 import 'package:dartz/dartz.dart';
 import '../repositories/user_repository.dart';
 
@@ -6,7 +8,7 @@ class DeleteUser {
 
   const DeleteUser(this.repository);
 
-  Future<Either<Failure, void>> call(int id) async {
-    return await repository.deleteUser(id);
+  Future<Either<Failure, void>> call(int userId) async {
+    return await repository.deleteUser(userId);
   }
 }

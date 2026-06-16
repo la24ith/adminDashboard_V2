@@ -15,7 +15,7 @@ class ApiConstants {
   static const String adminAds = '/api/admin/ads';
   static const String adminDevices = '/api/admin/devices';
   static const String adminReports = '/api/admin/reports';
-
+  static const String subscriptions = '/api/admin/subscriptions';
   // ✅ مسارات التقارير
   static const String adminReportsCommitments =
       '/api/admin/reports/commitments';
@@ -98,4 +98,27 @@ class ApiConstants {
   // ✅ مسارات الإعلانات
   static const String adminAdsToggle = '/api/admin/ads/{ad_id}/toggle';
   static const String adminAdsClick = '/api/ads/{ad_id}/click';
+
+  // معلمات Pagination
+  static const String perPage = 'per_page';
+  static const String page = 'page';
+  static const String search = 'search';
+  static const String status = 'status';
+
+  // ✅ بناء الـ URL مع المعلمات
+  static String getSubscriptionsUrl({
+    int page = 1,
+    int perPage = 20,
+    String? search,
+    String? status,
+  }) {
+    final buffer = StringBuffer('$subscriptions?$perPage=$perPage&$page=$page');
+    if (search != null && search.isNotEmpty) {
+      buffer.write('&$search=$search');
+    }
+    if (status != null && status.isNotEmpty) {
+      buffer.write('&$status=$status');
+    }
+    return buffer.toString();
+  }
 }

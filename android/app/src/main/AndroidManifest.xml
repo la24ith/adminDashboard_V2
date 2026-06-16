@@ -1,8 +1,10 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application
-        android:label="admin_dashboard"
+        android:label="لوحة التحكم"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/launcher_icon"
+        android:usesCleartextTraffic="true"
+        android:resource="@drawable/ic_notification">
         <activity
             android:name=".MainActivity"
             android:exported="true"

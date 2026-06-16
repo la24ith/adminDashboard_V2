@@ -1,5 +1,7 @@
+// domain/usecases/extend_subscription.dart
+
 import 'package:dartz/dartz.dart';
-import '../entities/user.dart';
+import '../entities/subscription_entity.dart';
 import '../repositories/user_repository.dart';
 
 class ExtendSubscription {
@@ -7,7 +9,10 @@ class ExtendSubscription {
 
   const ExtendSubscription(this.repository);
 
-  Future<Either<Failure, User>> call(int id, DateTime newEndDate) async {
-    return await repository.extendSubscription(id, newEndDate);
+  Future<Either<Failure, SubscriptionEntity>> call(
+    int userId,
+    int days,
+  ) async {
+    return await repository.extendSubscription(userId, days);
   }
 }

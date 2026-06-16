@@ -1,6 +1,7 @@
 import 'package:admin_dashboard/core/widgets/animated_widgets.dart';
 import 'package:admin_dashboard/features/device_management/pages/user_devices_screen.dart';
 import 'package:admin_dashboard/features/users/presentation/controllers/users_controller.dart';
+import 'package:admin_dashboard/features/users/presentation/pages/user_details_page.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../../core/constants/app_colors.dart';
@@ -71,10 +72,8 @@ class _UserCardState extends State<UserCard> {
         Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (context) => UserDevicesScreen(
-              userId: widget.user['id'],
-              userName: widget.user['name'],
-              userEmail: widget.user['email'],
+            builder: (context) => UserDetailsPage(
+              user: widget.user,
             ),
           ),
         );

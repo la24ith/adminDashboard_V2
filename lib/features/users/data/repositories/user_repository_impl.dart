@@ -1,100 +1,293 @@
+// data/repositories/user_repository_impl.dart
+
+import 'package:admin_dashboard/core/constants/api_constants.dart';
 import 'package:dartz/dartz.dart';
-import '../../domain/entities/user.dart';
+import 'package:dio/dio.dart';
+
+import '../../domain/entities/user_entity.dart';
+import '../../domain/entities/subscription_entity.dart';
+import '../../domain/entities/user_subscription_entity.dart';
 import '../../domain/repositories/user_repository.dart';
 import '../datasources/user_local_datasource.dart';
-import '../models/user_model.dart';
+import '../models/paginated_response.dart';
 
 class UserRepositoryImpl implements UserRepository {
+  final Dio dio;
   final UserLocalDataSource localDataSource;
+  final bool enableCache;
 
-  UserRepositoryImpl({required this.localDataSource});
+  UserRepositoryImpl({
+    required this.dio,
+    required this.localDataSource,
+    this.enableCache = true,
+  });
 
   @override
-  Future<Either<Failure, List<User>>> getUsers() async {
+  Future<Either<Failure, PaginatedUserSubscriptions>> getSubscriptions({
+    int page = 1,
+    int perPage = 20,
+    String? search,
+    String? status,
+  }) async {
     try {
-      final users = localDataSource.getUsers();
-      return Right(users.map((u) => u.toEntity()).toList());
+      // 🔍 1. التحقق من الـ Cache (للصفحة الأولى فقط)
+      if (enableCache && page == 1 && search == null && status == null) {
+        final cached = await localDataSource.getCachedSubscriptions();
+        if (cached != null) {
+          return Right(cached);
+        }
+      }
+
+      // 🌐 2. جلب البيانات من الـ API
+      final response = await dio.get(
+        ApiConstants.subscriptions,
+        queryParameters: {
+          ApiConstants.perPage: perPage,
+          ApiConstants.page: page,
+          if (search != null && search.isNotEmpty) 'search': search,
+          if (status != null && status.isNotEmpty) 'status': status,
+        },
+      );
+
+      // 📊 3. تحويل الـ Response
+      final paginatedResponse =
+          PaginatedResponse<Map<String, dynamic>>.fromJson(
+        response.data,
+        (json) => json,
+      );
+
+      // 🗂️ 4. تحويل إلى Entities
+      final entities = paginatedResponse.data.map((item) {
+        return UserSubscriptionEntity.fromJson(item);
+      }).toList();
+
+      final result = PaginatedUserSubscriptions(
+        currentPage: paginatedResponse.currentPage,
+        data: entities,
+        lastPage: paginatedResponse.lastPage,
+        total: paginatedResponse.total,
+        perPage: paginatedResponse.perPage,
+        hasMore: paginatedResponse.hasMore,
+      );
+
+      // 💾 5. حفظ في الـ Cache
+      if (enableCache && page == 1 && search == null && status == null) {
+        await localDataSource.cacheSubscriptions(result);
+      }
+
+      return Right(result);
+    } on DioException catch (e) {
+      final errorMessage = _handleDioError(e);
+      return Left(Failure(
+        message: errorMessage,
+        statusCode: e.response?.statusCode,
+        errors: e.response?.data,
+      ));
     } catch (e) {
-      return Left(Failure('Failed to load users: ${e.toString()}'));
+      return Left(Failure(
+        message: e.toString(),
+      ));
     }
   }
 
   @override
-  Future<Either<Failure, User>> addUser(User user) async {
+  Future<Either<Failure, UserSubscriptionEntity>> getUserSubscription(
+      int userId) async {
     try {
-      final newUser = UserModel.fromEntity(user);
-      localDataSource.addUser(newUser);
-      return Right(user);
+      final response = await dio.get(
+        '${ApiConstants.subscriptions}/$userId',
+      );
+
+      final model = UserSubscriptionEntity.fromJson(response.data);
+      return Right(model);
+    } on DioException catch (e) {
+      return Left(Failure(
+        message: _handleDioError(e),
+        statusCode: e.response?.statusCode,
+      ));
     } catch (e) {
-      return Left(Failure('Failed to add user: ${e.toString()}'));
+      return Left(Failure(message: e.toString()));
     }
   }
 
   @override
-  Future<Either<Failure, User>> updateUser(User user) async {
+  Future<Either<Failure, SubscriptionEntity>> updateSubscription(
+    int userId,
+    Map<String, dynamic> data,
+  ) async {
     try {
-      final updatedUser = UserModel.fromEntity(user);
-      localDataSource.updateUser(updatedUser);
-      return Right(user);
+      final response = await dio.put(
+        '/api/admin/users/$userId/subscription',
+        data: data,
+      );
+
+      final subscription =
+          SubscriptionEntity.fromJson(response.data['subscription']);
+      return Right(subscription);
+    } on DioException catch (e) {
+      return Left(Failure(
+        message: _handleDioError(e),
+        statusCode: e.response?.statusCode,
+      ));
     } catch (e) {
-      return Left(Failure('Failed to update user: ${e.toString()}'));
+      return Left(Failure(message: e.toString()));
     }
   }
 
   @override
-  Future<Either<Failure, void>> deleteUser(int id) async {
+  Future<Either<Failure, SubscriptionEntity>> extendSubscription(
+    int userId,
+    int days,
+  ) async {
     try {
-      localDataSource.deleteUser(id);
+      final response = await dio.post(
+        '/api/admin/users/$userId/extend-subscription',
+        data: {'days': days},
+      );
+
+      final subscription =
+          SubscriptionEntity.fromJson(response.data['subscription']);
+      return Right(subscription);
+    } on DioException catch (e) {
+      return Left(Failure(
+        message: _handleDioError(e),
+        statusCode: e.response?.statusCode,
+      ));
+    } catch (e) {
+      return Left(Failure(message: e.toString()));
+    }
+  }
+
+  @override
+  Future<Either<Failure, void>> deleteUser(int userId) async {
+    try {
+      await dio.delete('/api/admin/users/$userId');
       return const Right(null);
+    } on DioException catch (e) {
+      return Left(Failure(
+        message: _handleDioError(e),
+        statusCode: e.response?.statusCode,
+      ));
     } catch (e) {
-      return Left(Failure('Failed to delete user: ${e.toString()}'));
+      return Left(Failure(message: e.toString()));
     }
   }
 
   @override
-  Future<Either<Failure, User>> extendSubscription(
-      int id, DateTime newEndDate) async {
+  Future<Either<Failure, UserEntity>> updateUser(
+    int userId,
+    Map<String, dynamic> data,
+  ) async {
     try {
-      final users = localDataSource.getUsers();
-      final user = users.firstWhere((u) => u.id == id);
-
-      final updatedUser = UserModel(
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        subscriptionStart: user.subscriptionStart,
-        subscriptionEnd: newEndDate,
-        isActive: true,
-        multiDeviceEnabled: user.multiDeviceEnabled,
+      final response = await dio.put(
+        '/api/admin/users/$userId',
+        data: data,
       );
 
-      localDataSource.updateUser(updatedUser);
-      return Right(updatedUser.toEntity());
+      final user = UserEntity.fromJson(response.data['data'] ?? response.data);
+      return Right(user);
+    } on DioException catch (e) {
+      return Left(Failure(
+        message: _handleDioError(e),
+        statusCode: e.response?.statusCode,
+      ));
     } catch (e) {
-      return Left(Failure('Failed to extend subscription: ${e.toString()}'));
+      return Left(Failure(message: e.toString()));
     }
   }
 
   @override
-  Future<Either<Failure, User>> toggleMultiDevice(int id) async {
+  Future<Either<Failure, UserEntity>> createUser(
+      Map<String, dynamic> data) async {
     try {
-      final users = localDataSource.getUsers();
-      final user = users.firstWhere((u) => u.id == id);
-
-      final updatedUser = UserModel(
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        subscriptionStart: user.subscriptionStart,
-        subscriptionEnd: user.subscriptionEnd,
-        isActive: user.isActive,
-        multiDeviceEnabled: !user.multiDeviceEnabled,
+      final response = await dio.post(
+        '/api/admin/users',
+        data: data,
       );
 
-      localDataSource.updateUser(updatedUser);
-      return Right(updatedUser.toEntity());
+      final user = UserEntity.fromJson(response.data['data'] ?? response.data);
+      return Right(user);
+    } on DioException catch (e) {
+      return Left(Failure(
+        message: _handleDioError(e),
+        statusCode: e.response?.statusCode,
+      ));
     } catch (e) {
-      return Left(Failure('Failed to toggle multi-device: ${e.toString()}'));
+      return Left(Failure(message: e.toString()));
+    }
+  }
+
+  @override
+  Future<Either<Failure, UserEntity>> toggleUserStatus(
+    int userId,
+    bool currentStatus,
+  ) async {
+    try {
+      final response = await dio.put(
+        '/api/admin/users/$userId/status',
+        data: {'is_active': !currentStatus},
+      );
+
+      final user = UserEntity.fromJson(response.data['data'] ?? response.data);
+      return Right(user);
+    } on DioException catch (e) {
+      return Left(Failure(
+        message: _handleDioError(e),
+        statusCode: e.response?.statusCode,
+      ));
+    } catch (e) {
+      return Left(Failure(message: e.toString()));
+    }
+  }
+
+  @override
+  Future<Either<Failure, SubscriptionEntity>> toggleMultiDevice(
+    int userId,
+    bool currentStatus,
+  ) async {
+    try {
+      final response = await dio.post(
+        '/api/admin/users/$userId/devices/toggle',
+        data: {'enabled': !currentStatus},
+      );
+
+      final subscription =
+          SubscriptionEntity.fromJson(response.data['subscription']);
+      return Right(subscription);
+    } on DioException catch (e) {
+      return Left(Failure(
+        message: _handleDioError(e),
+        statusCode: e.response?.statusCode,
+      ));
+    } catch (e) {
+      return Left(Failure(message: e.toString()));
+    }
+  }
+
+  // 🛠️ Helper method لمعالجة أخطاء الـ Dio
+  String _handleDioError(DioException e) {
+    if (e.response != null) {
+      final data = e.response!.data;
+      if (data is Map && data.containsKey('message')) {
+        return data['message'] ?? 'حدث خطأ في الخادم';
+      }
+      if (data is Map && data.containsKey('errors')) {
+        final errors = data['errors'] as Map;
+        final messages =
+            errors.values.whereType<List>().expand((list) => list).join('\n');
+        return messages.isNotEmpty ? messages : 'حدث خطأ في التحقق من البيانات';
+      }
+    }
+
+    switch (e.type) {
+      case DioExceptionType.connectionTimeout:
+        return 'انتهى وقت الاتصال. تأكد من اتصالك بالإنترنت';
+      case DioExceptionType.receiveTimeout:
+        return 'انتهى وقت الاستجابة. حاول مرة أخرى';
+      case DioExceptionType.connectionError:
+        return 'لا يمكن الاتصال بالخادم. تأكد من اتصالك بالإنترنت';
+      default:
+        return e.message ?? 'حدث خطأ غير متوقع';
     }
   }
 }

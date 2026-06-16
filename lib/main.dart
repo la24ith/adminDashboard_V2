@@ -1,3 +1,4 @@
+import 'package:admin_dashboard/core/di/setup_locator.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'core/constants/app_colors.dart';
@@ -11,7 +12,10 @@ import 'features/auth/domain/usecases/login_usecase.dart';
 import 'features/auth/domain/usecases/logout_usecase.dart';
 import 'features/dashboard/presentation/pages/admin_dashboard.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  await init();
   runApp(const MyApp());
 }
 
@@ -36,6 +40,12 @@ class MyApp extends StatelessWidget {
       child: MaterialApp(
         title: 'WeightCare Admin',
         debugShowCheckedModeBanner: false,
+        theme: ThemeData(
+          primarySwatch: Colors.blue,
+          useMaterial3: true,
+          fontFamily: 'Cairo',
+          scaffoldBackgroundColor: Colors.grey[50],
+        ),
         themeMode: ThemeMode.system,
         initialRoute: '/',
         onGenerateRoute: _onGenerateRoute,
@@ -81,9 +91,9 @@ class _AuthCheckWrapperState extends State<AuthCheckWrapper> {
 
   Future<void> _checkAuth() async {
     final isLoggedIn = await AuthService.isLoggedIn();
-    
+
     if (!mounted) return;
-    
+
     if (isLoggedIn) {
       Navigator.pushReplacementNamed(context, AppRoutes.adminDashboard);
     } else {
