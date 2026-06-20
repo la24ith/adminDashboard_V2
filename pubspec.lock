@@ -57,14 +57,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.1.25"
-  audio_waveforms:
-    dependency: "direct main"
-    description:
-      name: audio_waveforms
-      sha256: "03b3430ecf430a2e90185518a228c02be3d26653c62dd931e50d671213a6dbc8"
-      url: "https://pub.dev"
-    source: hosted
-    version: "2.0.2"
   cached_network_image:
     dependency: "direct main"
     description:
@@ -217,22 +209,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.1.3"
-  ffmpeg_kit_flutter_new:
-    dependency: "direct main"
-    description:
-      name: ffmpeg_kit_flutter_new
-      sha256: "213ca74666ce8aa01fdaa77adc40444e9ef39e140b264747787bb0555da06783"
-      url: "https://pub.dev"
-    source: hosted
-    version: "4.2.1"
-  ffmpeg_kit_flutter_platform_interface:
-    dependency: transitive
-    description:
-      name: ffmpeg_kit_flutter_platform_interface
-      sha256: addf046ae44e190ad0101b2fde2ad909a3cd08a2a109f6106d2f7048b7abedee
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.2.1"
   file:
     dependency: transitive
     description:
@@ -374,6 +350,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "3.1.2"
+  flutter_svg:
+    dependency: "direct main"
+    description:
+      name: flutter_svg
+      sha256: "35882981abcbfb8c15b286f0cd690ff25bac12d95eff3e25ee207f37d4c42e7f"
+      url: "https://pub.dev"
+    source: hosted
+    version: "2.3.0"
   flutter_web_plugins:
     dependency: transitive
     description: flutter
@@ -551,12 +535,12 @@ packages:
     dependency: transitive
     description:
       name: meta
-      sha256: "1741988757a65eb6b36abe716829688cf01910bbf91c34354ff7ec1c3de2b349"
+      sha256: "23f08335362185a5ea2ad3a4e597f1375e78bce8a040df5c600c8d3552ef2394"
       url: "https://pub.dev"
     source: hosted
-    version: "1.18.0"
+    version: "1.17.0"
   mime:
-    dependency: "direct main"
+    dependency: transitive
     description:
       name: mime
       sha256: "801fd0b26f14a4a58ccb09d5892c3fbdeff209594300a542492cf13fba9d247a"
@@ -667,6 +651,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.9.1"
+  path_parsing:
+    dependency: transitive
+    description:
+      name: path_parsing
+      sha256: "883402936929eac138ee0a45da5b0f2c80f89913e6dc3bf77eb65b84b409c6ca"
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.1.0"
   path_provider:
     dependency: "direct main"
     description:
@@ -755,70 +747,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "6.1.5+1"
-  record:
-    dependency: "direct main"
-    description:
-      name: record
-      sha256: "11bab1e1d9e75229588222f66a468aae1967e1ce490c80f8bd782aa165ec822b"
-      url: "https://pub.dev"
-    source: hosted
-    version: "7.0.0"
-  record_android:
-    dependency: transitive
-    description:
-      name: record_android
-      sha256: "16e28607ad92dc2e7d93328f4f4720a9f82a78b639497690022e0e135a326f8e"
-      url: "https://pub.dev"
-    source: hosted
-    version: "2.0.1"
-  record_ios:
-    dependency: transitive
-    description:
-      name: record_ios
-      sha256: a7f456c9b2c5ba10f1ad0a7dfe19dcabcbfda0c2a09d4eef0c43e48e762a7b00
-      url: "https://pub.dev"
-    source: hosted
-    version: "2.0.0"
-  record_linux:
-    dependency: transitive
-    description:
-      name: record_linux
-      sha256: "64c70dede6f3a8235927531067ceb8e2ef1b737071f2ff72390ab49f88644f2a"
-      url: "https://pub.dev"
-    source: hosted
-    version: "2.0.0"
-  record_macos:
-    dependency: transitive
-    description:
-      name: record_macos
-      sha256: b8cd9dd88aff1b7a5873bb2a2a875b376ce1a68c6f84bce3ce0448e413a84700
-      url: "https://pub.dev"
-    source: hosted
-    version: "2.0.0"
-  record_platform_interface:
-    dependency: transitive
-    description:
-      name: record_platform_interface
-      sha256: fc1b2b26113b8ab2bffa39148288b0b588c7b3b356a21aeee7bea24b91b6f1a4
-      url: "https://pub.dev"
-    source: hosted
-    version: "2.0.0"
-  record_web:
-    dependency: transitive
-    description:
-      name: record_web
-      sha256: f3374c9ba6b6f9edcb3589be37515e420faba631b9d54421bb28562667831b05
-      url: "https://pub.dev"
-    source: hosted
-    version: "2.0.0"
-  record_windows:
-    dependency: transitive
-    description:
-      name: record_windows
-      sha256: "603429b542a2a7120ad988218ebebe50ed5565087db68ab694ae6c2d5a6e7749"
-      url: "https://pub.dev"
-    source: hosted
-    version: "2.0.0"
   rxdart:
     dependency: transitive
     description:
@@ -1024,6 +952,30 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "4.5.3"
+  vector_graphics:
+    dependency: transitive
+    description:
+      name: vector_graphics
+      sha256: "2306c03da2ba81724afeb589c351ebbc0aa7d86005925be8f8735856dbe5e42d"
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.2.2"
+  vector_graphics_codec:
+    dependency: transitive
+    description:
+      name: vector_graphics_codec
+      sha256: "99fd9fbd34d9f9a32efd7b6a6aae14125d8237b10403b422a6a6dfeac2806146"
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.1.13"
+  vector_graphics_compiler:
+    dependency: transitive
+    description:
+      name: vector_graphics_compiler
+      sha256: "142a9146f447d15b10bdc00e21d5f4d83e5b32bb5f8f8f5a04c75311344923a3"
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.2.6"
   vector_math:
     dependency: transitive
     description:
@@ -1137,5 +1089,5 @@ packages:
     source: hosted
     version: "3.1.3"
 sdks:
-  dart: ">=3.12.0 <4.0.0"
-  flutter: ">=3.44.0"
+  dart: ">=3.10.0 <4.0.0"
+  flutter: ">=3.38.0"

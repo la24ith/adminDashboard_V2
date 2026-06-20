@@ -1,4 +1,3 @@
-// lib/features/posts/presentation/widgets/post_form_page.dart
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
@@ -32,6 +31,7 @@ class _PostFormPageState extends State<PostFormPage>
   DateTime? _scheduledDate;
   bool _scheduleLater = false;
   bool _isSaving = false;
+  String _selectedSegment = 'general';
 
   // Media files
   File? _thumbnailFile;
@@ -42,6 +42,22 @@ class _PostFormPageState extends State<PostFormPage>
   String? _audioUrl;
 
   late AnimationController _animationController;
+
+  final List<Map<String, dynamic>> _segments = [
+    {'value': 'general', 'label': 'عام', 'icon': Icons.public},
+    {'value': 'diabetic', 'label': 'مرضى السكري', 'icon': Icons.bloodtype},
+    {
+      'value': 'breastfeeding',
+      'label': 'مرضعات',
+      'icon': Icons.family_restroom
+    },
+    {
+      'value': 'weight_loss',
+      'label': 'إنقاص الوزن',
+      'icon': Icons.fitness_center
+    },
+    {'value': 'weight_gain', 'label': 'زيادة الوزن', 'icon': Icons.restaurant},
+  ];
 
   @override
   void initState() {
@@ -55,6 +71,7 @@ class _PostFormPageState extends State<PostFormPage>
     _thumbnailUrl = post?.thumbnail;
     _videoUrl = post?.videoUrl;
     _audioUrl = post?.audioUrl;
+    _selectedSegment = post?.segment ?? 'general';
 
     _animationController = AnimationController(
       vsync: this,
@@ -104,6 +121,8 @@ class _PostFormPageState extends State<PostFormPage>
                               titleController: _titleController,
                               contentController: _contentController,
                             ),
+                            const SizedBox(height: 24),
+                            _buildSegmentSection(),
                             const SizedBox(height: 24),
                             PostMediaSection(
                               thumbnailFile: _thumbnailFile,
@@ -194,6 +213,121 @@ class _PostFormPageState extends State<PostFormPage>
     );
   }
 
+  Widget _buildSegmentSection() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: AppColors.accent.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(
+                    Icons.people_outline,
+                    color: AppColors.accent,
+                    size: 20,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'الجمهور المستهدف',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 16,
+                        color: Color(0xFF0F172A),
+                      ),
+                    ),
+                    Text(
+                      'اختر الفئة المستهدفة للمنشور',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Colors.grey.shade500,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: _segments.map((segment) {
+                final isSelected = _selectedSegment == segment['value'];
+                return ChoiceChip(
+                  label: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        segment['icon'],
+                        size: 16,
+                        color: isSelected ? Colors.white : Colors.grey.shade600,
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        segment['label'],
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight:
+                              isSelected ? FontWeight.w600 : FontWeight.w500,
+                          color:
+                              isSelected ? Colors.white : Colors.grey.shade700,
+                        ),
+                      ),
+                    ],
+                  ),
+                  selected: isSelected,
+                  onSelected: (_) {
+                    setState(() {
+                      _selectedSegment = segment['value'];
+                    });
+                  },
+                  selectedColor: AppColors.accent,
+                  backgroundColor: Colors.grey.shade50,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 10,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    side: BorderSide(
+                      color:
+                          isSelected ? AppColors.accent : Colors.grey.shade200,
+                      width: 1.5,
+                    ),
+                  ),
+                  elevation: isSelected ? 2 : 0,
+                  shadowColor: AppColors.accent.withOpacity(0.3),
+                  labelPadding: const EdgeInsets.symmetric(horizontal: 4),
+                );
+              }).toList(),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildErrorWidget() {
     if (widget.controller.error == null) return const SizedBox.shrink();
 
@@ -255,6 +389,7 @@ class _PostFormPageState extends State<PostFormPage>
         title: _titleController.text,
         content: _contentController.text,
         status: _status,
+        segment: _selectedSegment,
         scheduledFor: _scheduleLater ? _scheduledDate : null,
         thumbnailFile: _thumbnailFile,
         thumbnailUrl: _thumbnailUrl,
@@ -268,7 +403,8 @@ class _PostFormPageState extends State<PostFormPage>
         title: _titleController.text,
         content: _contentController.text,
         status: _status,
-        scheduledFor: _scheduleLater ? _scheduledDate : null,
+        segment: _selectedSegment,
+        scheduledFor: _scheduleLater ? _scheduledDate : DateTime.now(),
         thumbnailFile: _thumbnailFile,
         thumbnailUrl: _thumbnailUrl,
         videoFile: _videoFile,

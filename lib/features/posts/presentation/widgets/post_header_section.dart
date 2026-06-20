@@ -49,7 +49,7 @@ class PostHeaderSection extends StatelessWidget {
             Text(
               isEditing ? 'تعديل المنشور' : 'منشور جديد',
               style: const TextStyle(
-                fontSize: 28,
+                fontSize: 24,
                 fontWeight: FontWeight.w700,
                 color: Colors.black87,
               ),
@@ -78,7 +78,7 @@ class PostHeaderSection extends StatelessWidget {
                       Text(
                         _getStatusHint(status),
                         style: TextStyle(
-                            fontSize: 11, color: Colors.grey.shade600),
+                            fontSize: 10, color: Colors.grey.shade600),
                       ),
                     ],
                   ),

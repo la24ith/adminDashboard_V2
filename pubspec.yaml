@@ -56,12 +56,13 @@ dependencies:
   audio_service: ^0.18.11
   image: ^4.8.0
   intl: ^0.20.2
-  record: ^7.0.0
-  audio_waveforms: ^2.0.0
-  mime: ^1.0.6
-  ffmpeg_kit_flutter_new : ^4.0.0
+  #record: ^7.0.0
+  #audio_waveforms: ^2.0.0
+  #mime: ^1.0.6
+  #ffmpeg_kit_flutter_new : ^4.0.0
   flutter_launcher_icons: ^0.13.1
   get_it: ^9.2.1
+  flutter_svg: ^2.3.0
 
 
 dev_dependencies:

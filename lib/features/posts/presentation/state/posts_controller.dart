@@ -1,4 +1,4 @@
-import 'package:ffmpeg_kit_flutter_new/ffmpeg_kit.dart';
+//import 'package:ffmpeg_kit_flutter_new/ffmpeg_kit.dart';
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:path_provider/path_provider.dart';
@@ -8,7 +8,7 @@ import '../../../../core/network/dio_client.dart';
 import '../../../../core/constants/api_constants.dart';
 import '../../data/models/post_model.dart';
 import '../../data/repositories/post_repository.dart';
-import 'package:mime/mime.dart';
+//import 'package:mime/mime.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 
@@ -180,6 +180,7 @@ class PostsController extends ChangeNotifier {
     required String title,
     required String content,
     required PostStatus status,
+    required String segment,
     DateTime? scheduledFor,
     File? thumbnailFile,
     File? videoFile,
@@ -199,6 +200,7 @@ class PostsController extends ChangeNotifier {
         'title': title,
         'content': content,
         'status': status.apiValue,
+        'segment': segment,
         if (scheduledFor != null)
           'scheduled_for': scheduledFor.toIso8601String(),
       };
@@ -245,6 +247,7 @@ class PostsController extends ChangeNotifier {
     String? title,
     String? content,
     PostStatus? status,
+    String? segment,
     DateTime? scheduledFor,
     File? thumbnailFile,
     File? videoFile,
@@ -264,6 +267,7 @@ class PostsController extends ChangeNotifier {
       if (title != null) updateData['title'] = title;
       if (content != null) updateData['content'] = content;
       if (status != null) updateData['status'] = status.apiValue;
+      if (status != null) updateData['segment'] = segment;
       if (scheduledFor != null)
         updateData['scheduled_for'] = scheduledFor.toIso8601String();
 
@@ -737,9 +741,9 @@ class PostsController extends ChangeNotifier {
   Future<File> convertToMp3(File inputFile) async {
     final outputPath = inputFile.path.replaceAll('.m4a', '.mp3');
 
-    await FFmpegKit.execute(
+    /* await FFmpegKit.execute(
       '-i ${inputFile.path} -codec:a libmp3lame -qscale:a 2 $outputPath',
-    );
+    );*/
 
     return File(outputPath);
   }

@@ -121,6 +121,7 @@ class Post extends Equatable {
   final int id;
   final String title;
   final String content;
+  final String segment;
   final String? thumbnail;
   final PostStatus status;
   final DateTime? publishedAt;
@@ -138,6 +139,7 @@ class Post extends Equatable {
     required this.id,
     required this.title,
     required this.content,
+    required this.segment,
     this.thumbnail,
     required this.status,
     this.publishedAt,
@@ -225,6 +227,7 @@ class Post extends Equatable {
       content: json['content'] ?? '',
       thumbnail: json['thumbnail'],
       status: status,
+      segment: json['segment'] ?? 'general',
       publishedAt: json['published_at'] != null
           ? DateTime.tryParse(json['published_at'])
           : null,

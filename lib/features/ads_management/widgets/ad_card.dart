@@ -1,3 +1,4 @@
+import 'package:admin_dashboard/core/constants/api_constants.dart';
 import 'package:admin_dashboard/features/ads_management/models/ad_model.dart';
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -62,7 +63,7 @@ class _AdCardState extends State<AdCard> {
                       const BorderRadius.vertical(top: Radius.circular(20)),
                   child: hasImage
                       ? CachedNetworkImage(
-                          imageUrl: widget.ad.image!,
+                          imageUrl: ApiConstants.mediaUrl(widget.ad.image!),
                           height: 160,
                           width: double.infinity,
                           fit: BoxFit.cover,

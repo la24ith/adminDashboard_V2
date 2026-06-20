@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import '../../../core/constants/app_colors.dart';
 
 class AdFormPage extends StatefulWidget {
@@ -17,24 +18,10 @@ class _AdFormPageState extends State<AdFormPage> {
   final _formKey = GlobalKey<FormState>();
   late TextEditingController _titleController;
   late TextEditingController _contentController;
-  late TextEditingController _imageUrlController;
-  late TextEditingController _linkUrlController;
-  late DateTime _startDate;
-  late DateTime _endDate;
-  late bool _isActive;
-  bool _hasImage = true;
-  bool _isLoading = false;
-  bool _isSaving = false;
-  String? _errorMessage;
-
-  // Image upload variables
   File? _selectedImage;
-  bool _isUploadingImage = false;
-  String? _imageUploadError;
-
-  String _type = 'banner';
-  String _linkType = 'external';
-  List<String> _targetAudience = ['general'];
+  String? _errorMessage;
+  bool _isSaving = false;
+  bool _isImageSelected = false;
 
   @override
   void initState() {
@@ -42,78 +29,30 @@ class _AdFormPageState extends State<AdFormPage> {
     _titleController = TextEditingController(text: widget.ad?['title'] ?? '');
     _contentController =
         TextEditingController(text: widget.ad?['content'] ?? '');
-    _imageUrlController =
-        TextEditingController(text: widget.ad?['image_url'] ?? '');
-    _linkUrlController =
-        TextEditingController(text: widget.ad?['link_url'] ?? '');
-    _startDate = widget.ad?['start_date'] != null
-        ? DateTime.parse(widget.ad!['start_date'])
-        : DateTime.now();
-    _endDate = widget.ad?['end_date'] != null
-        ? DateTime.parse(widget.ad!['end_date'])
-        : DateTime.now().add(const Duration(days: 30));
-    _isActive = widget.ad?['is_active'] ?? true;
-    _hasImage = widget.ad?['image_url'] != null &&
-        widget.ad!['image_url'].toString().isNotEmpty;
-    _type = widget.ad?['type'] ?? 'banner';
-    _linkType = widget.ad?['link_type'] ?? 'external';
-    _targetAudience = widget.ad?['target_audience'] != null
-        ? List<String>.from(widget.ad!['target_audience'])
-        : ['general'];
   }
 
   @override
   void dispose() {
     _titleController.dispose();
     _contentController.dispose();
-    _imageUrlController.dispose();
-    _linkUrlController.dispose();
     super.dispose();
   }
 
-  Future<void> _pickImageFromGallery() async {
+  Future<void> _pickImage() async {
     final ImagePicker picker = ImagePicker();
     final XFile? image = await picker.pickImage(source: ImageSource.gallery);
-
     if (image != null) {
       setState(() {
         _selectedImage = File(image.path);
-        _imageUploadError = null;
+        _isImageSelected = true;
       });
     }
   }
 
-  Future<void> _pickImageFromCamera() async {
-    final ImagePicker picker = ImagePicker();
-    final XFile? image = await picker.pickImage(source: ImageSource.camera);
-
-    if (image != null) {
-      setState(() {
-        _selectedImage = File(image.path);
-        _imageUploadError = null;
-      });
-    }
-  }
-
-  void _clearImage() {
+  void _removeImage() {
     setState(() {
       _selectedImage = null;
-      _imageUrlController.clear();
-      _imageUploadError = null;
-      _hasImage = false;
-    });
-  }
-
-  void _toggleTargetAudience(String value) {
-    setState(() {
-      if (_targetAudience.contains(value)) {
-        _targetAudience.remove(value);
-      } else {
-        _targetAudience.add(value);
-      }
-      if (_targetAudience.isEmpty) {
-        _targetAudience.add('general');
-      }
+      _isImageSelected = false;
     });
   }
 
@@ -121,49 +60,39 @@ class _AdFormPageState extends State<AdFormPage> {
     if (_isSaving) return;
     if (!_formKey.currentState!.validate()) return;
 
-    if (_hasImage &&
-        _imageUrlController.text.isEmpty &&
-        _selectedImage == null) {
-      setState(() {
-        _errorMessage = 'الرجاء إضافة صورة للإعلان';
-      });
+    if (_selectedImage == null) {
+      setState(() => _errorMessage = 'الرجاء إضافة صورة للإعلان');
       return;
     }
 
     setState(() {
       _isSaving = true;
-      _isLoading = true;
       _errorMessage = null;
     });
 
     final adData = {
       'title': _titleController.text,
       'content': _contentController.text,
-      'type': _type,
-      'link_type': _linkType,
+      'type': 'banner',
+      'link_type': 'external',
       'position': 'top',
-      'start_date': _startDate.toIso8601String().split('T')[0],
-      'end_date': _endDate.toIso8601String().split('T')[0],
-      'is_active': _isActive,
-      'target_audience': _targetAudience,
-      if (_linkUrlController.text.isNotEmpty)
-        'link_url': _linkUrlController.text,
-      if (_hasImage && _imageUrlController.text.isNotEmpty)
-        'image': _selectedImage,
+      'start_date': DateTime.now().toIso8601String().split('T')[0],
+      'end_date': DateTime.now()
+          .add(const Duration(days: 30))
+          .toIso8601String()
+          .split('T')[0],
+      //'is_active': true,
+      //  'target_audience': '["general"]',
     };
-
-    print('📤 Sending ad data: $adData');
 
     try {
       await widget.onSave(adData, _selectedImage);
-
       if (mounted) {
         Navigator.of(context).pop(true);
       }
     } catch (e) {
       setState(() {
-        _errorMessage = 'حدث خطأ: ${e.toString()}';
-        _isLoading = false;
+        _errorMessage = 'فشل رفع الإعلان: ${e.toString()}';
         _isSaving = false;
       });
     }
@@ -172,27 +101,37 @@ class _AdFormPageState extends State<AdFormPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: const Color(0xFFF8FAFC),
       appBar: AppBar(
-        title: Text(widget.ad == null ? 'إضافة إعلان جديد' : 'تعديل الإعلان'),
+        title: Text(
+          widget.ad == null ? 'إضافة إعلان جديد' : 'تعديل الإعلان',
+          style: const TextStyle(
+            fontSize: 20,
+            fontWeight: FontWeight.w700,
+            color: Color(0xFF0F172A),
+          ),
+        ),
         centerTitle: true,
         elevation: 0,
         backgroundColor: Colors.transparent,
-        leading: IconButton(
-          icon: const Icon(Icons.close),
-          onPressed: () => Navigator.pop(context),
-        ),
-        actions: [
-          if (_isLoading)
-            const Padding(
-              padding: EdgeInsets.all(14),
-              child: SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(strokeWidth: 2),
+        leading: Container(
+          margin: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.04),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
               ),
-            ),
-        ],
+            ],
+          ),
+          child: IconButton(
+            icon: const Icon(Icons.close, color: Color(0xFF475569)),
+            onPressed: () => Navigator.pop(context),
+          ),
+        ),
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
@@ -204,351 +143,400 @@ class _AdFormPageState extends State<AdFormPage> {
               // Error message
               if (_errorMessage != null)
                 Container(
-                  padding: const EdgeInsets.all(12),
-                  margin: const EdgeInsets.only(bottom: 16),
+                  padding: const EdgeInsets.all(16),
+                  margin: const EdgeInsets.only(bottom: 20),
                   decoration: BoxDecoration(
-                    color: AppColors.errorLight,
-                    borderRadius: BorderRadius.circular(12),
+                    color: const Color(0xFFFEF2F2),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: const Color(0xFFFECACA)),
                   ),
                   child: Row(
                     children: [
-                      const Icon(Icons.error_outline, color: AppColors.error),
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFEE2E2),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: const Icon(
+                          Icons.error_outline,
+                          color: Color(0xFFDC2626),
+                          size: 20,
+                        ),
+                      ),
                       const SizedBox(width: 12),
                       Expanded(
                         child: Text(
                           _errorMessage!,
-                          style: const TextStyle(color: AppColors.error),
+                          style: const TextStyle(
+                            color: Color(0xFF991B1B),
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                          ),
                         ),
                       ),
                     ],
                   ),
                 ),
 
-              // Title
-              TextFormField(
-                controller: _titleController,
-                decoration: const InputDecoration(
-                  labelText: 'عنوان الإعلان *',
-                  border: OutlineInputBorder(),
-                  prefixIcon: Icon(Icons.title),
+              // Title Field
+              _buildField(
+                label: 'عنوان الإعلان',
+                required: true,
+                icon: Icons.title,
+                child: TextFormField(
+                  controller: _titleController,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    color: Color(0xFF0F172A),
+                  ),
+                  decoration: InputDecoration(
+                    hintText: 'أدخل عنوان الإعلان',
+                    hintStyle: TextStyle(
+                      color: Colors.grey.shade400,
+                      fontSize: 15,
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      borderSide: BorderSide.none,
+                    ),
+                    filled: true,
+                    fillColor: Colors.white,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 16,
+                    ),
+                  ),
+                  validator: (v) =>
+                      v == null || v.isEmpty ? 'العنوان مطلوب' : null,
                 ),
-                validator: (v) =>
-                    v == null || v.isEmpty ? 'العنوان مطلوب' : null,
               ),
-              const SizedBox(height: 16),
 
-              // Content
-              TextFormField(
-                controller: _contentController,
-                maxLines: 3,
-                decoration: const InputDecoration(
-                  labelText: 'محتوى الإعلان',
-                  border: OutlineInputBorder(),
-                  prefixIcon: Icon(Icons.description),
-                ),
-              ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 20),
 
-              // Ad Type
-              DropdownButtonFormField<String>(
-                value: _type,
-                decoration: const InputDecoration(
-                  labelText: 'نوع الإعلان',
-                  border: OutlineInputBorder(),
-                  prefixIcon: Icon(Icons.category),
-                ),
-                items: const [
-                  DropdownMenuItem(value: 'banner', child: Text('بانر')),
-                  DropdownMenuItem(value: 'popup', child: Text('منبثق')),
-                  DropdownMenuItem(value: 'inline', child: Text('مدمج')),
-                  DropdownMenuItem(value: 'video', child: Text('فيديو')),
-                ],
-                onChanged: (value) => setState(() => _type = value!),
-              ),
-              const SizedBox(height: 16),
-
-              // Link Type
-              DropdownButtonFormField<String>(
-                value: _linkType,
-                decoration: const InputDecoration(
-                  labelText: 'نوع الرابط',
-                  border: OutlineInputBorder(),
-                  prefixIcon: Icon(Icons.link),
-                ),
-                items: const [
-                  DropdownMenuItem(
-                      value: 'external', child: Text('رابط خارجي')),
-                  DropdownMenuItem(value: 'internal', child: Text('داخلي')),
-                  DropdownMenuItem(value: 'none', child: Text('بدون رابط')),
-                ],
-                onChanged: (value) => setState(() => _linkType = value!),
-              ),
-              const SizedBox(height: 16),
-
-              // Link URL
-              if (_linkType != 'none')
-                TextFormField(
-                  controller: _linkUrlController,
-                  decoration: const InputDecoration(
-                    labelText: 'رابط الإعلان',
-                    border: OutlineInputBorder(),
-                    prefixIcon: Icon(Icons.open_in_new),
-                    hintText: 'https://example.com',
+              // Content Field
+              _buildField(
+                label: 'محتوى الإعلان',
+                required: false,
+                icon: Icons.description,
+                child: TextFormField(
+                  controller: _contentController,
+                  maxLines: 4,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    color: Color(0xFF0F172A),
+                  ),
+                  decoration: InputDecoration(
+                    hintText: 'أدخل محتوى الإعلان (اختياري)',
+                    hintStyle: TextStyle(
+                      color: Colors.grey.shade400,
+                      fontSize: 15,
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      borderSide: BorderSide.none,
+                    ),
+                    filled: true,
+                    fillColor: Colors.white,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 16,
+                    ),
                   ),
                 ),
-              const SizedBox(height: 16),
-
-              // Target Audience
-              const Text(
-                'الجمهور المستهدف',
-                style: TextStyle(fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  _buildTargetChip('general', 'عام'),
-                  _buildTargetChip('diabetes', 'مرضى السكري'),
-                  _buildTargetChip('cubs', 'الأشبال'),
-                ],
-              ),
-              const SizedBox(height: 16),
-
-              // Start Date
-              ListTile(
-                leading: const Icon(Icons.calendar_today),
-                title: const Text('تاريخ البداية'),
-                subtitle: Text(
-                    '${_startDate.year}-${_startDate.month.toString().padLeft(2, '0')}-${_startDate.day.toString().padLeft(2, '0')}'),
-                onTap: () async {
-                  final date = await showDatePicker(
-                    context: context,
-                    initialDate: _startDate,
-                    firstDate: DateTime.now(),
-                    lastDate: DateTime(2030),
-                  );
-                  if (date != null) setState(() => _startDate = date);
-                },
               ),
 
-              // End Date
-              ListTile(
-                leading: const Icon(Icons.event_busy),
-                title: const Text('تاريخ النهاية'),
-                subtitle: Text(
-                    '${_endDate.year}-${_endDate.month.toString().padLeft(2, '0')}-${_endDate.day.toString().padLeft(2, '0')}'),
-                onTap: () async {
-                  final date = await showDatePicker(
-                    context: context,
-                    initialDate: _endDate,
-                    firstDate: _startDate,
-                    lastDate: DateTime(2030),
-                  );
-                  if (date != null) setState(() => _endDate = date);
-                },
-              ),
-
-              // Active Switch
-              SwitchListTile(
-                title: const Text('تفعيل الإعلان'),
-                value: _isActive,
-                onChanged: (value) => setState(() => _isActive = value),
-                activeColor: AppColors.accent,
-              ),
-
-              const SizedBox(height: 16),
+              const SizedBox(height: 24),
 
               // Image Section
-              Card(
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    SwitchListTile(
-                      title: const Text('إضافة صورة'),
-                      value: _hasImage,
-                      onChanged: (value) {
-                        setState(() {
-                          _hasImage = value;
-                          if (!value) _clearImage();
-                        });
-                      },
+              Container(
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(20),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.04),
+                      blurRadius: 12,
+                      offset: const Offset(0, 4),
                     ),
-                    if (_hasImage) ...[
-                      const Divider(height: 1),
-                      Padding(
-                        padding: const EdgeInsets.all(12),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            // Image Preview
-                            if (_imageUrlController.text.isNotEmpty ||
-                                _selectedImage != null)
-                              Container(
-                                margin: const EdgeInsets.only(bottom: 12),
-                                decoration: BoxDecoration(
-                                  borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(color: AppColors.border),
+                  ],
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: AppColors.accent.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Icon(
+                              Icons.image_outlined,
+                              color: AppColors.accent,
+                              size: 20,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'صورة الإعلان',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 16,
+                                  color: Color(0xFF0F172A),
                                 ),
-                                child: Stack(
-                                  children: [
-                                    ClipRRect(
-                                      borderRadius: BorderRadius.circular(8),
-                                      child: _selectedImage != null
-                                          ? Image.file(
-                                              _selectedImage!,
-                                              height: 150,
-                                              width: double.infinity,
-                                              fit: BoxFit.cover,
-                                            )
-                                          : Image.network(
-                                              _imageUrlController.text,
-                                              height: 150,
-                                              width: double.infinity,
-                                              fit: BoxFit.cover,
-                                              errorBuilder: (_, __, ___) =>
-                                                  Container(
-                                                height: 150,
-                                                color: Colors.grey.shade200,
-                                                child: const Center(
-                                                    child: Icon(
-                                                        Icons.broken_image,
-                                                        size: 40)),
-                                              ),
-                                            ),
-                                    ),
-                                    Positioned(
-                                      top: 8,
-                                      right: 8,
-                                      child: GestureDetector(
-                                        onTap: _clearImage,
-                                        child: Container(
-                                          padding: const EdgeInsets.all(4),
-                                          decoration: BoxDecoration(
-                                            color:
-                                                Colors.black.withOpacity(0.5),
-                                            shape: BoxShape.circle,
-                                          ),
-                                          child: const Icon(Icons.close,
-                                              size: 16, color: Colors.white),
-                                        ),
+                              ),
+                              Text(
+                                'اختر صورة جذابة للإعلان',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: Colors.grey.shade500,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const Spacer(),
+                          if (_isImageSelected)
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 4,
+                              ),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFDCFCE7),
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                              child: const Text(
+                                'مختارة',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                  color: Color(0xFF15803D),
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+
+                      // Image Preview
+                      if (_selectedImage != null)
+                        Container(
+                          margin: const EdgeInsets.only(bottom: 16),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(color: Colors.grey.shade200),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withOpacity(0.04),
+                                blurRadius: 8,
+                                offset: const Offset(0, 2),
+                              ),
+                            ],
+                          ),
+                          child: Stack(
+                            children: [
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(16),
+                                child: Image.file(
+                                  _selectedImage!,
+                                  height: 200,
+                                  width: double.infinity,
+                                  fit: BoxFit.cover,
+                                ),
+                              ),
+                              Positioned(
+                                top: 12,
+                                right: 12,
+                                child: GestureDetector(
+                                  onTap: _removeImage,
+                                  child: Container(
+                                    padding: const EdgeInsets.all(6),
+                                    decoration: BoxDecoration(
+                                      color: Colors.black.withOpacity(0.6),
+                                      shape: BoxShape.circle,
+                                      border: Border.all(
+                                        color: Colors.white.withOpacity(0.3),
+                                        width: 1.5,
                                       ),
                                     ),
-                                  ],
-                                ),
-                              ),
-
-                            // Image URL Field
-                            TextFormField(
-                              controller: _imageUrlController,
-                              decoration: const InputDecoration(
-                                labelText: 'رابط الصورة',
-                                prefixIcon: Icon(Icons.link),
-                                border: OutlineInputBorder(),
-                                hintText: 'https://example.com/image.jpg',
-                              ),
-                              validator: (v) => _hasImage &&
-                                      (v == null || v.isEmpty) &&
-                                      _selectedImage == null
-                                  ? 'رابط الصورة مطلوب'
-                                  : null,
-                            ),
-
-                            const SizedBox(height: 12),
-
-                            // Upload Buttons
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: OutlinedButton.icon(
-                                    onPressed: _isLoading
-                                        ? null
-                                        : _pickImageFromGallery,
-                                    icon: const Icon(Icons.photo_library,
-                                        size: 18),
-                                    label: const Text('اختر من المعرض'),
-                                    style: OutlinedButton.styleFrom(
-                                      padding: const EdgeInsets.symmetric(
-                                          vertical: 10),
+                                    child: const Icon(
+                                      Icons.close,
+                                      size: 16,
+                                      color: Colors.white,
                                     ),
                                   ),
                                 ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: OutlinedButton.icon(
-                                    onPressed: _isLoading
-                                        ? null
-                                        : _pickImageFromCamera,
-                                    icon:
-                                        const Icon(Icons.camera_alt, size: 18),
-                                    label: const Text('التقاط صورة'),
-                                    style: OutlinedButton.styleFrom(
-                                      padding: const EdgeInsets.symmetric(
-                                          vertical: 10),
-                                    ),
+                              ),
+                              Positioned(
+                                bottom: 12,
+                                left: 12,
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                    vertical: 4,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.black.withOpacity(0.6),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      const Icon(
+                                        Icons.check_circle,
+                                        size: 14,
+                                        color: Color(0xFF4ADE80),
+                                      ),
+                                      const SizedBox(width: 4),
+                                      const Text(
+                                        'تم الرفع',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ),
-                              ],
+                              ),
+                            ],
+                          ),
+                        ),
+
+                      // Upload Button
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton.icon(
+                          onPressed: _isSaving ? null : _pickImage,
+                          icon: Icon(
+                            _selectedImage != null
+                                ? Icons.refresh
+                                : Icons.upload_file,
+                            size: 20,
+                          ),
+                          label: Text(
+                            _selectedImage != null
+                                ? 'تغيير الصورة'
+                                : 'اختر صورة من المعرض',
+                            style: const TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w600,
                             ),
-
-                            if (_isUploadingImage) ...[
-                              const SizedBox(height: 12),
-                              const LinearProgressIndicator(),
-                              const SizedBox(height: 8),
-                              const Text(
-                                'جاري رفع الصورة...',
-                                style: TextStyle(fontSize: 12),
-                              ),
-                            ],
-
-                            if (_imageUploadError != null) ...[
-                              const SizedBox(height: 8),
-                              Text(
-                                _imageUploadError!,
-                                style: const TextStyle(
-                                    color: AppColors.error, fontSize: 12),
-                              ),
-                            ],
-                          ],
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: _selectedImage != null
+                                ? AppColors.accent.withOpacity(0.08)
+                                : AppColors.accent,
+                            foregroundColor: _selectedImage != null
+                                ? AppColors.accent
+                                : Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                              side: _selectedImage != null
+                                  ? BorderSide(
+                                      color: AppColors.accent.withOpacity(0.3))
+                                  : BorderSide.none,
+                            ),
+                            elevation: _selectedImage != null ? 0 : 2,
+                          ),
                         ),
                       ),
+
+                      if (_selectedImage == null)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 12),
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.info_outline,
+                                size: 14,
+                                color: Colors.grey.shade400,
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                'يجب اختيار صورة للإعلان',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.grey.shade500,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                     ],
-                  ],
+                  ),
                 ),
               ),
 
               const SizedBox(height: 32),
 
               // Save Button
-              SizedBox(
+              Container(
                 width: double.infinity,
-                height: 50,
-                child: ElevatedButton(
-                  onPressed: (_isLoading || _isUploadingImage) ? null : _save,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.accent,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
+                height: 56,
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      AppColors.accent,
+                      AppColors.accent.withOpacity(0.8),
+                    ],
+                    begin: Alignment.centerLeft,
+                    end: Alignment.centerRight,
                   ),
-                  child: _isLoading
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppColors.accent.withOpacity(0.3),
+                      blurRadius: 12,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: ElevatedButton(
+                  onPressed: _isSaving ? null : _save,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.transparent,
+                    shadowColor: Colors.transparent,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    elevation: 0,
+                  ),
+                  child: _isSaving
                       ? const SizedBox(
-                          width: 20,
-                          height: 20,
+                          width: 24,
+                          height: 24,
                           child: CircularProgressIndicator(
-                              strokeWidth: 2, color: Colors.white),
+                            strokeWidth: 2.5,
+                            color: Colors.white,
+                          ),
                         )
-                      : const Text(
-                          'حفظ',
-                          style: TextStyle(
-                              fontSize: 16, fontWeight: FontWeight.bold),
+                      : const Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.check_circle_outline, size: 22),
+                            SizedBox(width: 10),
+                            Text(
+                              'حفظ الإعلان',
+                              style: TextStyle(
+                                fontSize: 17,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
                         ),
                 ),
               ),
-              const SizedBox(height: 20),
+
+              const SizedBox(height: 16),
             ],
           ),
         ),
@@ -556,17 +544,60 @@ class _AdFormPageState extends State<AdFormPage> {
     );
   }
 
-  Widget _buildTargetChip(String value, String label) {
-    final isSelected = _targetAudience.contains(value);
-    return FilterChip(
-      label: Text(label),
-      selected: isSelected,
-      onSelected: (_) => _toggleTargetAudience(value),
-      backgroundColor: AppColors.surface,
-      selectedColor: AppColors.accent.withOpacity(0.1),
-      checkmarkColor: AppColors.accent,
-      labelStyle: TextStyle(
-        color: isSelected ? AppColors.accent : AppColors.textSecondary,
+  Widget _buildField({
+    required String label,
+    required bool required,
+    required IconData icon,
+    required Widget child,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(4),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(right: 16, top: 12, bottom: 4),
+              child: Row(
+                children: [
+                  Icon(icon, size: 18, color: AppColors.accent),
+                  const SizedBox(width: 8),
+                  Text(
+                    label,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF0F172A),
+                    ),
+                  ),
+                  if (required)
+                    const Text(
+                      ' *',
+                      style: TextStyle(
+                        color: Color(0xFFEF4444),
+                        fontSize: 16,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+              child: child,
+            ),
+          ],
+        ),
       ),
     );
   }
