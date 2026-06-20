@@ -9,9 +9,15 @@ class DeviceManagementController extends ChangeNotifier {
   String? _error;
   String? _approvingDeviceId;
 
+  // ✅ متغير لتخزين أجهزة المستخدم الحالي
+  List<Map<String, dynamic>> _currentUserDevices = [];
+
   // Getters
   List<Map<String, dynamic>> get allDevices => _allDevices;
   List<Map<String, dynamic>> get usersWithDevices => _usersWithDevices;
+
+  // ✅ Getter لأجهزة المستخدم الحالي
+  List<Map<String, dynamic>> get currentUserDevices => _currentUserDevices;
 
   // أجهزة بانتظار الموافقة
   List<Map<String, dynamic>> get pendingDevices {
@@ -149,6 +155,38 @@ class DeviceManagementController extends ChangeNotifier {
     }
   }
 
+  // ✅ جلب أجهزة مستخدم معين (جديد)
+  Future<void> loadUserDevices(String userId) async {
+    try {
+      final dio = DioClient.instance;
+      debugPrint('📡 Fetching devices for user: $userId');
+
+      final response = await dio.get('/api/admin/users/$userId/devices');
+
+      if (response.statusCode == 200) {
+        final devicesData = response.data;
+        List<Map<String, dynamic>> devices = [];
+
+        if (devicesData is List) {
+          devices = List<Map<String, dynamic>>.from(devicesData);
+        } else if (devicesData['data'] is List) {
+          devices = List<Map<String, dynamic>>.from(devicesData['data']);
+        } else if (devicesData['devices'] is List) {
+          devices = List<Map<String, dynamic>>.from(devicesData['devices']);
+        }
+
+        _currentUserDevices = devices;
+        notifyListeners();
+        debugPrint('✅ User $userId has ${devices.length} devices');
+      }
+    } catch (e) {
+      debugPrint('❌ Error loading devices for user $userId: $e');
+      _currentUserDevices = [];
+      _error = e.toString();
+      notifyListeners();
+    }
+  }
+
   // جلب أجهزة كل مستخدم على حدة
   Future<void> _loadDevicesForAllUsers() async {
     final dio = DioClient.instance;
@@ -201,11 +239,14 @@ class DeviceManagementController extends ChangeNotifier {
 
       if (response.statusCode == 200 || response.statusCode == 204) {
         _updateDeviceStatus(id, 'is_approved', true);
+        _error = null;
         return true;
       }
+      _error = 'فشل الموافقة على الجهاز';
       return false;
     } catch (e) {
       debugPrint('❌ Approve error: $e');
+      _error = e.toString();
       return false;
     } finally {
       _approvingDeviceId = null;
@@ -227,11 +268,14 @@ class DeviceManagementController extends ChangeNotifier {
 
       if (response.statusCode == 200 || response.statusCode == 204) {
         _updateDeviceStatus(id, 'is_blocked', true);
+        _error = null;
         return true;
       }
+      _error = 'فشل حظر الجهاز';
       return false;
     } catch (e) {
       debugPrint('❌ Block error: $e');
+      _error = e.toString();
       return false;
     }
   }
@@ -250,11 +294,14 @@ class DeviceManagementController extends ChangeNotifier {
 
       if (response.statusCode == 200 || response.statusCode == 204) {
         _removeDeviceFromLists(id);
+        _error = null;
         return true;
       }
+      _error = 'فشل حذف الجهاز';
       return false;
     } catch (e) {
       debugPrint('❌ Delete error: $e');
+      _error = e.toString();
       return false;
     }
   }
@@ -280,6 +327,13 @@ class DeviceManagementController extends ChangeNotifier {
       }
     }
 
+    // ✅ تحديث في _currentUserDevices
+    final currentIndex =
+        _currentUserDevices.indexWhere((d) => d['id'].toString() == deviceId);
+    if (currentIndex != -1) {
+      _currentUserDevices[currentIndex][key] = value;
+    }
+
     notifyListeners();
   }
 
@@ -295,6 +349,9 @@ class DeviceManagementController extends ChangeNotifier {
         userDevices.removeWhere((d) => d['id'].toString() == deviceId);
       }
     }
+
+    // ✅ إزالة من _currentUserDevices
+    _currentUserDevices.removeWhere((d) => d['id'].toString() == deviceId);
 
     notifyListeners();
   }
@@ -317,12 +374,18 @@ class DeviceManagementController extends ChangeNotifier {
           _usersWithDevices[userIndex]['devices'] = [];
         }
 
+        // ✅ مسح أجهزة المستخدم الحالي
+        _currentUserDevices = [];
+
         notifyListeners();
+        _error = null;
         return true;
       }
+      _error = 'فشل إعادة ضبط الأجهزة';
       return false;
     } catch (e) {
       debugPrint('❌ Reset devices error: $e');
+      _error = e.toString();
       return false;
     }
   }
@@ -343,5 +406,11 @@ class DeviceManagementController extends ChangeNotifier {
   // تحديث جميع البيانات
   Future<void> refreshAll() async {
     await loadAllData();
+  }
+
+  // ✅ مسح أجهزة المستخدم الحالي
+  void clearCurrentUserDevices() {
+    _currentUserDevices = [];
+    notifyListeners();
   }
 }

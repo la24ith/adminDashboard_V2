@@ -1,6 +1,16 @@
 // presentation/pages/user_details_page.dart
 
 import 'package:admin_dashboard/core/constants/app_colors.dart';
+import 'package:admin_dashboard/core/di/setup_locator.dart';
+import 'package:admin_dashboard/features/device_management/controllers/device_controller.dart';
+import 'package:admin_dashboard/features/users/domain/usecases/add_user.dart';
+import 'package:admin_dashboard/features/users/domain/usecases/delete_user.dart';
+import 'package:admin_dashboard/features/users/domain/usecases/extend_subscription.dart';
+import 'package:admin_dashboard/features/users/domain/usecases/get_subscriptions.dart';
+import 'package:admin_dashboard/features/users/domain/usecases/toggle_multi_device.dart';
+import 'package:admin_dashboard/features/users/domain/usecases/toggle_user_status.dart';
+import 'package:admin_dashboard/features/users/domain/usecases/update_subscription.dart';
+import 'package:admin_dashboard/features/users/domain/usecases/update_user.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../controllers/users_controller.dart';
@@ -23,6 +33,16 @@ class _UserDetailsPageState extends State<UserDetailsPage>
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
 
+  // ✅ متغير لتخزين أجهزة المستخدم
+  List<Map<String, dynamic>> _userDevices = [];
+  bool _isLoadingDevices = false;
+  String? _deviceError;
+  String? _processingDeviceId;
+
+  // ✅ متغيرات للـ Providers
+  late UsersController _usersController;
+  late DeviceManagementController _deviceController;
+
   @override
   void initState() {
     super.initState();
@@ -37,9 +57,66 @@ class _UserDetailsPageState extends State<UserDetailsPage>
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+
+    // ✅ الحصول على الـ Providers من الـ Context
+    try {
+      _usersController = context.read<UsersController>();
+    } catch (e) {
+      // إذا لم يوجد UsersController، نستخدم widget.user فقط
+      _usersController = UsersController(
+        getSubscriptionsUseCase: getIt<GetSubscriptions>(),
+        createUserUseCase: getIt<CreateUser>(),
+        updateUserUseCase: getIt<UpdateUser>(),
+        deleteUserUseCase: getIt<DeleteUser>(),
+        extendSubscriptionUseCase: getIt<ExtendSubscription>(),
+        updateSubscriptionUseCase: getIt<UpdateSubscription>(),
+        toggleUserStatusUseCase: getIt<ToggleUserStatus>(),
+        toggleMultiDeviceUseCase: getIt<ToggleMultiDevice>(),
+      );
+    }
+
+    try {
+      _deviceController = context.read<DeviceManagementController>();
+    } catch (e) {
+      // إذا لم يوجد DeviceManagementController، ننشئ واحداً جديداً
+      _deviceController = DeviceManagementController();
+    }
+
+    // ✅ تحميل أجهزة المستخدم عند فتح الصفحة
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadUserDevices();
+    });
+  }
+
+  @override
   void dispose() {
     _animationController.dispose();
     super.dispose();
+  }
+
+  // ✅ دالة تحميل أجهزة المستخدم
+  Future<void> _loadUserDevices() async {
+    final userId = widget.user['id'].toString();
+
+    setState(() {
+      _isLoadingDevices = true;
+      _deviceError = null;
+    });
+
+    try {
+      await _deviceController.loadUserDevices(userId);
+      setState(() {
+        _userDevices = _deviceController.currentUserDevices;
+        _isLoadingDevices = false;
+      });
+    } catch (e) {
+      setState(() {
+        _deviceError = 'فشل تحميل الأجهزة: $e';
+        _isLoadingDevices = false;
+      });
+    }
   }
 
   @override
@@ -48,8 +125,6 @@ class _UserDetailsPageState extends State<UserDetailsPage>
     final isActive = user['is_active'] ?? false;
     final isExpired = user['is_expired'] ?? false;
     final daysRemaining = user['days_remaining'] ?? 0;
-    final devices = user['devices'] as List? ?? [];
-    final devicesCount = devices.length;
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -69,7 +144,7 @@ class _UserDetailsPageState extends State<UserDetailsPage>
           ),
           IconButton(
             icon: const Icon(Icons.refresh, color: AppColors.info),
-            onPressed: () => _refreshUser(),
+            onPressed: () => _refreshAllData(),
             tooltip: 'تحديث البيانات',
           ),
         ],
@@ -91,13 +166,13 @@ class _UserDetailsPageState extends State<UserDetailsPage>
 
               const SizedBox(height: 16),
 
-              // ✅ 3. معلومات الاشتراك
+              // ✅ 3. معلومات الاشتراك (مع زر تعديل)
               _buildSubscriptionCard(user),
 
               const SizedBox(height: 16),
 
-              // ✅ 4. بيانات الأجهزة
-              _buildDevicesCard(user),
+              // ✅ 4. بيانات الأجهزة (مع device_id وأزرار تحكم)
+              _buildDevicesCard(),
 
               const SizedBox(height: 16),
 
@@ -136,7 +211,6 @@ class _UserDetailsPageState extends State<UserDetailsPage>
       ),
       child: Column(
         children: [
-          // الأفاتار والاسم
           Row(
             children: [
               Container(
@@ -207,7 +281,6 @@ class _UserDetailsPageState extends State<UserDetailsPage>
             ],
           ),
           const SizedBox(height: 16),
-          // حالة الاشتراك
           Row(
             children: [
               Expanded(
@@ -271,7 +344,7 @@ class _UserDetailsPageState extends State<UserDetailsPage>
             '$devicesUsed / $maxDevices',
             Icons.devices,
             AppColors.info,
-            progress: devicesUsed / maxDevices,
+            progress: maxDevices > 0 ? devicesUsed / maxDevices : 0,
           ),
         ),
         const SizedBox(width: 12),
@@ -360,7 +433,7 @@ class _UserDetailsPageState extends State<UserDetailsPage>
     );
   }
 
-  // ✅ بطاقة الاشتراك
+  // ✅ بطاقة الاشتراك (مع زر تعديل)
   Widget _buildSubscriptionCard(Map<String, dynamic> user) {
     return Container(
       padding: const EdgeInsets.all(20),
@@ -419,57 +492,23 @@ class _UserDetailsPageState extends State<UserDetailsPage>
             'الأجهزة المتعددة',
             (user['is_multi_device'] ?? false) ? 'مفعل ✅' : 'غير مفعل ❌',
           ),
-          if (user['subscription_notes'] != null) ...[
-            const SizedBox(height: 8),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: AppColors.surface,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Icon(Icons.note,
-                      size: 16, color: AppColors.textTertiary),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      user['subscription_notes'] ?? '',
-                      style: const TextStyle(fontSize: 13),
-                    ),
+          // ✅ زر تمديد الاشتراك
+          Padding(
+            padding: const EdgeInsets.only(top: 12),
+            child: SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: () => _showExtendDialog(context, user),
+                icon: const Icon(Icons.timer_outlined, size: 18),
+                label: const Text('تمديد الاشتراك'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.warning,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
                   ),
-                ],
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _buildInfoRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 120,
-            child: Text(
-              label,
-              style: const TextStyle(
-                fontSize: 13,
-                color: AppColors.textSecondary,
-              ),
-            ),
-          ),
-          Expanded(
-            child: Text(
-              value,
-              style: const TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w500,
+                ),
               ),
             ),
           ),
@@ -479,13 +518,7 @@ class _UserDetailsPageState extends State<UserDetailsPage>
   }
 
   // ✅ بطاقة الأجهزة
-  Widget _buildDevicesCard(Map<String, dynamic> user) {
-    final devices = user['devices'] as List? ?? [];
-    final totalDevices = user['total_devices'] ?? 0;
-    final approvedDevices = user['approved_devices'] ?? 0;
-    final pendingDevices = user['pending_devices'] ?? 0;
-    final blockedDevices = user['blocked_devices'] ?? 0;
-
+  Widget _buildDevicesCard() {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -521,49 +554,68 @@ class _UserDetailsPageState extends State<UserDetailsPage>
                 ),
               ),
               const Spacer(),
-              Text(
-                '$totalDevices أجهزة',
-                style: const TextStyle(
-                  fontSize: 13,
-                  color: AppColors.textSecondary,
+              if (_isLoadingDevices)
+                const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              else
+                Text(
+                  '${_userDevices.length} أجهزة',
+                  style: const TextStyle(
+                    fontSize: 13,
+                    color: AppColors.textSecondary,
+                  ),
                 ),
-              ),
             ],
           ),
           const Divider(height: 24),
 
-          // ملخص الأجهزة
-          Row(
-            children: [
-              _buildDeviceSummaryChip(
-                'موافق',
-                approvedDevices,
-                AppColors.success,
+          // ✅ حالة التحميل
+          if (_isLoadingDevices)
+            const Center(
+              child: Padding(
+                padding: EdgeInsets.all(32),
+                child: Column(
+                  children: [
+                    CircularProgressIndicator(),
+                    SizedBox(height: 16),
+                    Text('جاري تحميل الأجهزة...'),
+                  ],
+                ),
               ),
-              const SizedBox(width: 8),
-              _buildDeviceSummaryChip(
-                'معلق',
-                pendingDevices,
-                AppColors.warning,
+            )
+          // ✅ حالة الخطأ
+          else if (_deviceError != null)
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  children: [
+                    Icon(Icons.error_outline, color: AppColors.error, size: 48),
+                    const SizedBox(height: 12),
+                    Text(
+                      _deviceError!,
+                      style: const TextStyle(color: AppColors.error),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 12),
+                    ElevatedButton(
+                      onPressed: _loadUserDevices,
+                      child: const Text('إعادة المحاولة'),
+                    ),
+                  ],
+                ),
               ),
-              const SizedBox(width: 8),
-              _buildDeviceSummaryChip(
-                'محظور',
-                blockedDevices,
-                AppColors.error,
-              ),
-            ],
-          ),
-
-          const SizedBox(height: 16),
-
-          // قائمة الأجهزة
-          if (devices.isEmpty)
+            )
+          // ✅ قائمة الأجهزة
+          else if (_userDevices.isEmpty)
             Center(
               child: Padding(
                 padding: const EdgeInsets.all(20),
                 child: Text(
-                  'لا توجد أجهزة مسجلة',
+                  'لا توجد أجهزة مسجلة لهذا المستخدم',
                   style: TextStyle(
                     color: AppColors.textSecondary,
                     fontSize: 14,
@@ -575,256 +627,324 @@ class _UserDetailsPageState extends State<UserDetailsPage>
             ListView.separated(
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
-              itemCount: devices.length > 5 ? 5 : devices.length,
+              itemCount: _userDevices.length,
               separatorBuilder: (_, __) => const Divider(height: 1),
               itemBuilder: (context, index) {
-                final device = devices[index];
-                return _buildDeviceItem(device);
+                final device = _userDevices[index];
+                return _buildDeviceItemWithControls(device);
               },
             ),
-
-          if (devices.length > 5)
-            Padding(
-              padding: const EdgeInsets.only(top: 12),
-              child: Center(
-                child: TextButton(
-                  onPressed: () {
-                    // يمكن فتح صفحة كل الأجهزة
-                    // Navigator.push(...)
-                  },
-                  child: Text('عرض كل الأجهزة (${devices.length})'),
-                ),
-              ),
-            ),
         ],
       ),
     );
   }
 
-  Widget _buildDeviceSummaryChip(String label, int count, Color color) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: color.withOpacity(0.3)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 8,
-            height: 8,
-            decoration: BoxDecoration(
-              color: color,
-              shape: BoxShape.circle,
-            ),
-          ),
-          const SizedBox(width: 8),
-          Text(
-            '$label: $count',
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w500,
-              color: color,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildDeviceItem(Map<String, dynamic> device) {
+  // ✅ عنصر جهاز مع أزرار تحكم
+  Widget _buildDeviceItemWithControls(Map<String, dynamic> device) {
+    final deviceId = device['id']?.toString() ?? '';
     final isApproved = device['is_approved'] ?? false;
-    final status = device['status'] ?? 'inactive';
+    final isBlocked = device['is_blocked'] ?? false;
+    final isProcessing = _processingDeviceId == deviceId;
 
+    // تحديد الحالة
     Color statusColor;
     String statusText;
-    if (isApproved && status == 'active') {
-      statusColor = AppColors.success;
-      statusText = 'نشط';
-    } else if (isApproved) {
-      statusColor = AppColors.info;
-      statusText = 'موافق';
-    } else if (status == 'pending') {
-      statusColor = AppColors.warning;
-      statusText = 'معلق';
-    } else {
+    if (isBlocked) {
       statusColor = AppColors.error;
       statusText = 'محظور';
+    } else if (isApproved) {
+      statusColor = AppColors.success;
+      statusText = 'موافق';
+    } else {
+      statusColor = AppColors.warning;
+      statusText = 'معلق';
     }
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Row(
-        children: [
-          Icon(
-            Icons.smartphone,
-            color: isApproved ? AppColors.success : AppColors.warning,
-            size: 20,
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  device['device_id'] ?? 'جهاز غير معروف',
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-                if (device['device_name'] != null)
-                  Text(
-                    device['device_name'] ?? '',
-                    style: const TextStyle(
-                      fontSize: 11,
-                      color: AppColors.textSecondary,
-                    ),
-                  ),
-              ],
-            ),
-          ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
-              color: statusColor.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Text(
-              statusText,
-              style: TextStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.w600,
-                color: statusColor,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ✅ معلومات إضافية
-  Widget _buildAdditionalInfo(Map<String, dynamic> user) {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.04),
-            blurRadius: 10,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: AppColors.textTertiary.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: const Icon(
-                  Icons.info_outline,
-                  color: AppColors.textTertiary,
-                ),
+              Icon(
+                isApproved ? Icons.smartphone : Icons.smartphone_outlined,
+                color: isApproved ? AppColors.success : AppColors.warning,
+                size: 20,
               ),
               const SizedBox(width: 12),
-              const Text(
-                'معلومات إضافية',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // ✅ عرض device_id
+                    Row(
+                      children: [
+                        const Text(
+                          'Device ID: ',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: AppColors.textTertiary,
+                          ),
+                        ),
+                        Expanded(
+                          child: Text(
+                            deviceId.isNotEmpty ? deviceId : 'غير معروف',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              fontFamily: 'monospace',
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (device['device_name'] != null &&
+                        device['device_name']!.isNotEmpty) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        device['device_name'] ?? '',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              // ✅ حالة الجهاز
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: statusColor.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  statusText,
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w600,
+                    color: statusColor,
+                  ),
                 ),
               ),
             ],
           ),
-          const Divider(height: 24),
-          _buildInfoRow('المعرف (ID)', '${user['id'] ?? '—'}'),
-          _buildInfoRow('الدور', _translateRole(user['role'])),
-          _buildInfoRow('رقم الهاتف', user['phone'] ?? '—'),
-          _buildInfoRow('شريحة المستخدم', user['patient_segment'] ?? '—'),
-          if (user['created_by'] != null)
-            _buildInfoRow('تم الإنشاء بواسطة', '${user['created_by']}'),
+          const SizedBox(height: 8),
+          // ✅ أزرار التحكم
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              // زر الموافقة
+              if (!isApproved && !isBlocked)
+                _buildActionButton(
+                  onPressed:
+                      isProcessing ? null : () => _approveDevice(deviceId),
+                  icon: Icons.check_circle_outline,
+                  label: 'موافقة',
+                  color: AppColors.success,
+                  isLoading: isProcessing,
+                ),
+              if (!isApproved && !isBlocked) const SizedBox(width: 8),
+              // زر الحظر
+              if (!isBlocked)
+                _buildActionButton(
+                  onPressed: isProcessing ? null : () => _blockDevice(deviceId),
+                  icon: Icons.block_outlined,
+                  label: 'حظر',
+                  color: AppColors.error,
+                  isLoading: isProcessing,
+                ),
+              if (!isBlocked) const SizedBox(width: 8),
+              // زر الحذف
+              _buildActionButton(
+                onPressed: isProcessing ? null : () => _deleteDevice(deviceId),
+                icon: Icons.delete_outline,
+                label: 'حذف',
+                color: AppColors.error,
+                isLoading: isProcessing,
+                isDanger: true,
+              ),
+            ],
+          ),
         ],
       ),
     );
   }
 
-  // ✅ دوال مساعدة
-  Widget _buildStatusChip(String label, Color color, Color textColor) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.2),
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          fontSize: 11,
-          fontWeight: FontWeight.w600,
-          color: textColor,
+  // ✅ زر تحكم مساعد
+  Widget _buildActionButton({
+    required VoidCallback? onPressed,
+    required IconData icon,
+    required String label,
+    required Color color,
+    bool isLoading = false,
+    bool isDanger = false,
+  }) {
+    return SizedBox(
+      height: 32,
+      child: ElevatedButton.icon(
+        onPressed: onPressed,
+        icon: isLoading
+            ? const SizedBox(
+                width: 14,
+                height: 14,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Colors.white,
+                ),
+              )
+            : Icon(icon, size: 16),
+        label: Text(label, style: const TextStyle(fontSize: 11)),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: isDanger ? color : color,
+          foregroundColor: Colors.white,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(8),
+          ),
+          elevation: 0,
         ),
       ),
     );
   }
 
-  String _translatePlanType(String? planType) {
-    switch (planType) {
-      case 'monthly':
-        return 'شهري';
-      case 'quarterly':
-        return 'ربع سنوي';
-      case 'yearly':
-        return 'سنوي';
-      default:
-        return planType ?? 'غير محدد';
+  // ✅ دوال التحكم بالأجهزة
+  Future<void> _approveDevice(String deviceId) async {
+    setState(() => _processingDeviceId = deviceId);
+
+    final success = await _deviceController.approveDevice(deviceId);
+
+    setState(() => _processingDeviceId = null);
+
+    if (context.mounted) {
+      if (success) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('تمت الموافقة على الجهاز بنجاح'),
+            backgroundColor: AppColors.success,
+          ),
+        );
+        await _loadUserDevices();
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(_deviceController.error ?? 'فشل الموافقة على الجهاز'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
     }
   }
 
-  String _translateStatus(String? status) {
-    switch (status) {
-      case 'active':
-        return 'نشط';
-      case 'inactive':
-        return 'غير نشط';
-      case 'expired':
-        return 'منتهي';
-      default:
-        return status ?? 'غير محدد';
+  Future<void> _blockDevice(String deviceId) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('تأكيد الحظر'),
+        content: const Text('هل أنت متأكد من حظر هذا الجهاز؟'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('إلغاء'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.error),
+            child: const Text('حظر'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    setState(() => _processingDeviceId = deviceId);
+
+    final success = await _deviceController.blockDevice(deviceId);
+
+    setState(() => _processingDeviceId = null);
+
+    if (context.mounted) {
+      if (success) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('تم حظر الجهاز بنجاح'),
+            backgroundColor: AppColors.success,
+          ),
+        );
+        await _loadUserDevices();
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(_deviceController.error ?? 'فشل حظر الجهاز'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
     }
   }
 
-  String _translateRole(String? role) {
-    switch (role) {
-      case 'admin':
-        return 'مدير';
-      case 'supervisor':
-        return 'مشرف';
-      case 'patient':
-        return 'مريض';
-      default:
-        return role ?? 'غير محدد';
+  Future<void> _deleteDevice(String deviceId) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('تأكيد الحذف'),
+        content: const Text('هل أنت متأكد من حذف هذا الجهاز؟'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('إلغاء'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.error),
+            child: const Text('حذف'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    setState(() => _processingDeviceId = deviceId);
+
+    final success = await _deviceController.deleteDevice(deviceId);
+
+    setState(() => _processingDeviceId = null);
+
+    if (context.mounted) {
+      if (success) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('تم حذف الجهاز بنجاح'),
+            backgroundColor: AppColors.success,
+          ),
+        );
+        await _loadUserDevices();
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(_deviceController.error ?? 'فشل حذف الجهاز'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
     }
   }
 
-  // ✅ تحديث البيانات
-  Future<void> _refreshUser() async {
-    final controller = context.read<UsersController>();
-    await controller.refreshUserData('${widget.user['id']}');
-    if (mounted) {
+  // ✅ تحديث جميع البيانات
+  Future<void> _refreshAllData() async {
+    await _usersController.refreshUserData(widget.user['id'].toString());
+    await _loadUserDevices();
+
+    if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('تم تحديث البيانات'),
+          content: Text('تم تحديث جميع البيانات'),
           backgroundColor: AppColors.success,
           duration: Duration(seconds: 2),
         ),
@@ -832,22 +952,99 @@ class _UserDetailsPageState extends State<UserDetailsPage>
     }
   }
 
+  // ✅ دوال الاشتراك
+  void _showExtendDialog(BuildContext context, Map<String, dynamic> user) {
+    final userId = user['id'].toString();
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('تمديد الاشتراك'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppColors.surface,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Column(
+                children: [
+                  Text(
+                      'تاريخ النهاية الحالي: ${_formatDate(user['subscription_end'])}'),
+                  const SizedBox(height: 4),
+                  Text('المتبقي: ${user['days_remaining'] ?? 0} يوم',
+                      style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.warning)),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+            SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                    onPressed: () => _extendSubscription(context, userId, 30),
+                    child: const Text('+30 يوم'))),
+            const SizedBox(height: 8),
+            SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                    onPressed: () => _extendSubscription(context, userId, 90),
+                    child: const Text('+90 يوم'))),
+            const SizedBox(height: 8),
+            SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                    onPressed: () => _extendSubscription(context, userId, 365),
+                    child: const Text('+365 يوم'))),
+          ],
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('إلغاء'))
+        ],
+      ),
+    );
+  }
+
+  Future<void> _extendSubscription(
+      BuildContext context, String userId, int days) async {
+    Navigator.pop(context);
+
+    final success = await _usersController.extendSubscription(userId, days);
+
+    if (context.mounted) {
+      if (success) {
+        await _usersController.refreshUserData(userId);
+        await _loadUserDevices();
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('تم تمديد الاشتراك $days يوماً'),
+            backgroundColor: AppColors.success));
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(_usersController.error ?? 'فشل تمديد الاشتراك'),
+            backgroundColor: AppColors.error));
+      }
+    }
+  }
+
   // ✅ تعديل المستخدم
   void _showEditUserDialog(BuildContext context, Map<String, dynamic> user) {
-    // استخدام الـ UserFormPage الحالي
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (_) => UserFormPage(
           user: user,
           onSave: (userData) async {
-            final controller = context.read<UsersController>();
-            final success = await controller.updateUser(
+            final success = await _usersController.updateUser(
               user['id'].toString(),
               userData,
             );
             if (!success) {
-              throw Exception(controller.error ?? 'فشل تحديث المستخدم');
+              throw Exception(_usersController.error ?? 'فشل تحديث المستخدم');
             }
             return true;
           },
@@ -855,7 +1052,7 @@ class _UserDetailsPageState extends State<UserDetailsPage>
       ),
     ).then((result) {
       if (result == true) {
-        _refreshUser();
+        _refreshAllData();
       }
     });
   }
@@ -1008,8 +1205,7 @@ class _UserDetailsPageState extends State<UserDetailsPage>
                 onPressed: () async {
                   Navigator.pop(context);
 
-                  final controller = context.read<UsersController>();
-                  final success = await controller.updateSubscription(
+                  final success = await _usersController.updateSubscription(
                     userId,
                     {
                       'start_date': startDateController.text,
@@ -1023,7 +1219,8 @@ class _UserDetailsPageState extends State<UserDetailsPage>
 
                   if (context.mounted) {
                     if (success) {
-                      await controller.refreshUserData(userId);
+                      await _usersController.refreshUserData(userId);
+                      await _loadUserDevices();
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(
                           content: Text('تم تحديث الاشتراك بنجاح'),
@@ -1033,8 +1230,8 @@ class _UserDetailsPageState extends State<UserDetailsPage>
                     } else {
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
-                          content:
-                              Text(controller.error ?? 'فشل تحديث الاشتراك'),
+                          content: Text(
+                              _usersController.error ?? 'فشل تحديث الاشتراك'),
                           backgroundColor: AppColors.error,
                         ),
                       );
@@ -1051,5 +1248,155 @@ class _UserDetailsPageState extends State<UserDetailsPage>
         },
       ),
     );
+  }
+
+  // ✅ دوال مساعدة
+  Widget _buildInfoRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 120,
+            child: Text(
+              label,
+              style: const TextStyle(
+                fontSize: 13,
+                color: AppColors.textSecondary,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatusChip(String label, Color color, Color textColor) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.2),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+          color: textColor,
+        ),
+      ),
+    );
+  }
+
+  String _formatDate(dynamic dateValue) {
+    if (dateValue == null || dateValue == '—') return '—';
+    try {
+      final date = DateTime.parse(dateValue);
+      return '${date.day}/${date.month}/${date.year}';
+    } catch (e) {
+      return dateValue.toString();
+    }
+  }
+
+  String _translatePlanType(String? planType) {
+    switch (planType) {
+      case 'monthly':
+        return 'شهري';
+      case 'quarterly':
+        return 'ربع سنوي';
+      case 'yearly':
+        return 'سنوي';
+      default:
+        return planType ?? 'غير محدد';
+    }
+  }
+
+  String _translateStatus(String? status) {
+    switch (status) {
+      case 'active':
+        return 'نشط';
+      case 'inactive':
+        return 'غير نشط';
+      case 'expired':
+        return 'منتهي';
+      default:
+        return status ?? 'غير محدد';
+    }
+  }
+
+  Widget _buildAdditionalInfo(Map<String, dynamic> user) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 10,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: AppColors.textTertiary.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(
+                  Icons.info_outline,
+                  color: AppColors.textTertiary,
+                ),
+              ),
+              const SizedBox(width: 12),
+              const Text(
+                'معلومات إضافية',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+          const Divider(height: 24),
+          _buildInfoRow('المعرف (ID)', '${user['id'] ?? '—'}'),
+          _buildInfoRow('الدور', _translateRole(user['role'])),
+          _buildInfoRow('رقم الهاتف', user['phone'] ?? '—'),
+          _buildInfoRow('شريحة المستخدم', user['patient_segment'] ?? '—'),
+          if (user['created_by'] != null)
+            _buildInfoRow('تم الإنشاء بواسطة', '${user['created_by']}'),
+        ],
+      ),
+    );
+  }
+
+  String _translateRole(String? role) {
+    switch (role) {
+      case 'admin':
+        return 'مدير';
+      case 'supervisor':
+        return 'مشرف';
+      case 'patient':
+        return 'مريض';
+      default:
+        return role ?? 'غير محدد';
+    }
   }
 }

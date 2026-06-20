@@ -4,6 +4,7 @@ import 'dart:async';
 
 import 'package:admin_dashboard/core/constants/app_colors.dart';
 import 'package:admin_dashboard/core/di/setup_locator.dart';
+import 'package:admin_dashboard/features/device_management/controllers/device_controller.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../controllers/users_controller.dart';
@@ -344,49 +345,6 @@ class _UsersPageContentState extends State<_UsersPageContent> {
     );
   }
 
-  // ✅ دوال العرض (نفسها موجودة في الملف الأصلي)
-  Future<void> _showUserForm(BuildContext context, UsersController controller,
-      {Map<String, dynamic>? user}) async {
-    final result = await Navigator.push<bool>(
-      context,
-      MaterialPageRoute(
-        builder: (_) => UserFormPage(
-          user: user,
-          onSave: (userData) async {
-            final success = user == null
-                ? await controller.createUser(userData)
-                : await controller.updateUser(user['id'].toString(), userData);
-
-            if (!success) {
-              throw Exception(controller.error ??
-                  (user == null ? 'فشل إنشاء المستخدم' : 'فشل تحديث المستخدم'));
-            }
-            return true;
-          },
-        ),
-      ),
-    );
-
-    if (result == true) {
-      await controller.loadUsers(refresh: true);
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).clearSnackBars();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(controller.successMessage ??
-                (user == null
-                    ? 'تم إنشاء المستخدم بنجاح'
-                    : 'تم تحديث المستخدم بنجاح')),
-            backgroundColor: AppColors.success,
-            behavior: SnackBarBehavior.floating,
-            duration: const Duration(seconds: 3),
-          ),
-        );
-        controller.clearMessages();
-      }
-    }
-  }
-
   void _showEditSubscriptionDialog(BuildContext context,
       UsersController controller, Map<String, dynamic> user) {
     final userId = user['id'].toString();
@@ -718,6 +676,52 @@ class _UsersPageContentState extends State<_UsersPageContent> {
       return '${date.day}/${date.month}/${date.year}';
     } catch (e) {
       return dateValue.toString();
+    }
+  }
+
+  Future<void> _showUserForm(BuildContext context, UsersController controller,
+      {Map<String, dynamic>? user}) async {
+    final result = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => UserFormPage(
+          user: user,
+          onSave: (userData) async {
+            final success = user == null
+                ? await controller.createUser(userData)
+                : await controller.updateUser(user['id'].toString(), userData);
+
+            if (!success) {
+              throw Exception(controller.error ??
+                  (user == null ? 'فشل إنشاء المستخدم' : 'فشل تحديث المستخدم'));
+            }
+            return true;
+          },
+        ),
+      ),
+    );
+
+    if (result == true) {
+      await controller.loadUsers(refresh: true);
+      // ✅ تحديث أجهزة المستخدمين أيضاً
+      final deviceController = context.read<DeviceManagementController>();
+      await deviceController.loadAllData();
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).clearSnackBars();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(controller.successMessage ??
+                (user == null
+                    ? 'تم إنشاء المستخدم بنجاح'
+                    : 'تم تحديث المستخدم بنجاح')),
+            backgroundColor: AppColors.success,
+            behavior: SnackBarBehavior.floating,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+        controller.clearMessages();
+      }
     }
   }
 }
