@@ -62,6 +62,77 @@ class _UsersPageContentState extends State<_UsersPageContent> {
     }
   }
 
+// ✅ دالة تحديث بيانات المستخدمين
+  Future<void> _refreshUsers(
+      BuildContext context, UsersController controller) async {
+    // عرض مؤشر تحميل في الـ SnackBar
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Row(
+          children: [
+            SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: Colors.white,
+              ),
+            ),
+            SizedBox(width: 12),
+            Text('جاري تحديث البيانات...'),
+          ],
+        ),
+        backgroundColor: AppColors.info,
+        duration: Duration(seconds: 2),
+      ),
+    );
+
+    try {
+      // ✅ تحديث البيانات من الـ API
+      await controller.loadUsers(refresh: true);
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).clearSnackBars();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Row(
+              children: [
+                Icon(Icons.check_circle, color: Colors.white),
+                SizedBox(width: 12),
+                Text('تم تحديث البيانات بنجاح'),
+              ],
+            ),
+            backgroundColor: AppColors.success,
+            behavior: SnackBarBehavior.floating,
+            duration: Duration(seconds: 2),
+            shape: RoundedRectangleBorder(),
+          ),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).clearSnackBars();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.error_outline, color: Colors.white),
+                const SizedBox(width: 12),
+                Expanded(child: Text('فشل تحديث البيانات: $e')),
+              ],
+            ),
+            backgroundColor: AppColors.error,
+            behavior: SnackBarBehavior.floating,
+            duration: const Duration(seconds: 3),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final controller = context.watch<UsersController>();
@@ -225,60 +296,64 @@ class _UsersPageContentState extends State<_UsersPageContent> {
                     ? const Center(child: CircularProgressIndicator())
                     : controller.users.isEmpty
                         ? _buildEmptyState()
-                        : GridView.builder(
-                            controller: _scrollController,
-                            padding: const EdgeInsets.all(16),
-                            gridDelegate:
-                                SliverGridDelegateWithFixedCrossAxisCount(
-                              crossAxisCount: crossAxisCount,
-                              crossAxisSpacing: 16,
-                              mainAxisSpacing: 16,
-                              childAspectRatio: 0.9,
-                            ),
-                            itemCount: controller.users.length +
-                                (controller.hasMore ? 1 : 0),
-                            itemBuilder: (context, index) {
-                              // عرض مؤشر تحميل في آخر القائمة
-                              if (index >= controller.users.length) {
-                                return const Center(
-                                  child: Padding(
-                                    padding: EdgeInsets.all(16),
-                                    child: SizedBox(
-                                      width: 30,
-                                      height: 30,
-                                      child: CircularProgressIndicator(
-                                          strokeWidth: 2),
+                        : RefreshIndicator(
+                            onRefresh: () => _refreshUsers(context, controller),
+                            child: GridView.builder(
+                              controller: _scrollController,
+                              padding: const EdgeInsets.all(16),
+                              gridDelegate:
+                                  SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: crossAxisCount,
+                                crossAxisSpacing: 16,
+                                mainAxisSpacing: 16,
+                                childAspectRatio: 0.9,
+                              ),
+                              itemCount: controller.users.length +
+                                  (controller.hasMore ? 1 : 0),
+                              itemBuilder: (context, index) {
+                                // عرض مؤشر تحميل في آخر القائمة
+                                if (index >= controller.users.length) {
+                                  return const Center(
+                                    child: Padding(
+                                      padding: EdgeInsets.all(16),
+                                      child: SizedBox(
+                                        width: 30,
+                                        height: 30,
+                                        child: CircularProgressIndicator(
+                                            strokeWidth: 2),
+                                      ),
                                     ),
-                                  ),
-                                );
-                              }
+                                  );
+                                }
 
-                              final user = controller.users[index];
-                              final isDeletingThisUser =
-                                  controller.isDeleting &&
-                                      controller.deletingUserId ==
-                                          user['id'].toString();
-                              return UserCard(
-                                user: user,
-                                onEdit: () => _showUserForm(context, controller,
-                                    user: user),
-                                onExtend: () => _showExtendDialog(
-                                    context, controller, user),
-                                onEditSubscription: () =>
-                                    _showEditSubscriptionDialog(
-                                        context, controller, user),
-                                onToggleDevice: () =>
-                                    _toggleDevice(context, controller, user),
-                                onToggleStatus: () =>
-                                    _toggleStatus(context, controller, user),
-                                onDelete: () =>
-                                    _deleteUser(context, controller, user),
-                                isDeleting: isDeletingThisUser,
-                                onAddWeight: () {
-                                  _showAddWeightPage(context, user);
-                                },
-                              );
-                            },
+                                final user = controller.users[index];
+                                final isDeletingThisUser =
+                                    controller.isDeleting &&
+                                        controller.deletingUserId ==
+                                            user['id'].toString();
+                                return UserCard(
+                                  user: user,
+                                  onEdit: () => _showUserForm(
+                                      context, controller,
+                                      user: user),
+                                  onExtend: () => _showExtendDialog(
+                                      context, controller, user),
+                                  onEditSubscription: () =>
+                                      _showEditSubscriptionDialog(
+                                          context, controller, user),
+                                  onToggleDevice: () =>
+                                      _toggleDevice(context, controller, user),
+                                  onToggleStatus: () =>
+                                      _toggleStatus(context, controller, user),
+                                  onDelete: () =>
+                                      _deleteUser(context, controller, user),
+                                  isDeleting: isDeletingThisUser,
+                                  onAddWeight: () {
+                                    _showAddWeightPage(context, user);
+                                  },
+                                );
+                              },
+                            ),
                           ),
               ),
             ],
