@@ -3,9 +3,11 @@ import 'package:admin_dashboard/features/users/data/datasources/user_local_datas
 import 'package:admin_dashboard/features/users/data/repositories/user_repository_impl.dart';
 import 'package:admin_dashboard/features/users/domain/repositories/user_repository.dart';
 import 'package:admin_dashboard/features/users/domain/usecases/add_user.dart';
+import 'package:admin_dashboard/features/users/domain/usecases/add_weight.dart';
 import 'package:admin_dashboard/features/users/domain/usecases/delete_user.dart';
 import 'package:admin_dashboard/features/users/domain/usecases/extend_subscription.dart';
 import 'package:admin_dashboard/features/users/domain/usecases/get_subscriptions.dart';
+import 'package:admin_dashboard/features/users/domain/usecases/get_user_weight_history.dart';
 import 'package:admin_dashboard/features/users/domain/usecases/toggle_multi_device.dart';
 import 'package:admin_dashboard/features/users/domain/usecases/toggle_user_status.dart';
 import 'package:admin_dashboard/features/users/domain/usecases/update_subscription.dart';
@@ -48,6 +50,8 @@ Future<void> init() async {
   sl.registerLazySingleton(() => UpdateSubscription(sl()));
   sl.registerLazySingleton(() => ToggleUserStatus(sl()));
   sl.registerLazySingleton(() => ToggleMultiDevice(sl()));
+  sl.registerLazySingleton(() => AddWeight(sl())); // ✅ تسجيل AddWeight
+  sl.registerLazySingleton(() => GetUserWeightHistory(sl()));
 
   // ✅ Controllers
   sl.registerFactory(
@@ -60,6 +64,8 @@ Future<void> init() async {
       updateSubscriptionUseCase: sl(),
       toggleUserStatusUseCase: sl(),
       toggleMultiDeviceUseCase: sl(),
+      addWeightUseCase: sl(), // ✅ إضافة
+      getUserWeightHistoryUseCase: sl(),
     ),
   );
 }

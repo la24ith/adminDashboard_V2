@@ -9,14 +9,14 @@ class DeviceManagementController extends ChangeNotifier {
   String? _error;
   String? _approvingDeviceId;
 
-  // ✅ متغير لتخزين أجهزة المستخدم الحالي
+  // ✅ متغير لتخزين أجهزة المستخدم الحالي (جديد)
   List<Map<String, dynamic>> _currentUserDevices = [];
 
   // Getters
   List<Map<String, dynamic>> get allDevices => _allDevices;
   List<Map<String, dynamic>> get usersWithDevices => _usersWithDevices;
 
-  // ✅ Getter لأجهزة المستخدم الحالي
+  // ✅ Getter لأجهزة المستخدم الحالي (جديد)
   List<Map<String, dynamic>> get currentUserDevices => _currentUserDevices;
 
   // أجهزة بانتظار الموافقة
@@ -176,8 +176,11 @@ class DeviceManagementController extends ChangeNotifier {
         }
 
         _currentUserDevices = devices;
+        _error = null;
         notifyListeners();
         debugPrint('✅ User $userId has ${devices.length} devices');
+      } else {
+        throw Exception('Failed to load devices for user $userId');
       }
     } catch (e) {
       debugPrint('❌ Error loading devices for user $userId: $e');
@@ -306,7 +309,7 @@ class DeviceManagementController extends ChangeNotifier {
     }
   }
 
-  // تحديث حالة جهاز في جميع القوائم
+  // ✅ تحديث حالة جهاز في جميع القوائم (معدل)
   void _updateDeviceStatus(String deviceId, String key, bool value) {
     // تحديث في _allDevices
     final deviceIndex =
@@ -327,7 +330,7 @@ class DeviceManagementController extends ChangeNotifier {
       }
     }
 
-    // ✅ تحديث في _currentUserDevices
+    // ✅ تحديث في _currentUserDevices (جديد)
     final currentIndex =
         _currentUserDevices.indexWhere((d) => d['id'].toString() == deviceId);
     if (currentIndex != -1) {
@@ -337,7 +340,7 @@ class DeviceManagementController extends ChangeNotifier {
     notifyListeners();
   }
 
-  // إزالة جهاز من جميع القوائم
+  // ✅ إزالة جهاز من جميع القوائم (معدل)
   void _removeDeviceFromLists(String deviceId) {
     // إزالة من _allDevices
     _allDevices.removeWhere((d) => d['id'].toString() == deviceId);
@@ -350,7 +353,7 @@ class DeviceManagementController extends ChangeNotifier {
       }
     }
 
-    // ✅ إزالة من _currentUserDevices
+    // ✅ إزالة من _currentUserDevices (جديد)
     _currentUserDevices.removeWhere((d) => d['id'].toString() == deviceId);
 
     notifyListeners();
@@ -374,7 +377,7 @@ class DeviceManagementController extends ChangeNotifier {
           _usersWithDevices[userIndex]['devices'] = [];
         }
 
-        // ✅ مسح أجهزة المستخدم الحالي
+        // ✅ مسح أجهزة المستخدم الحالي (جديد)
         _currentUserDevices = [];
 
         notifyListeners();
@@ -408,7 +411,7 @@ class DeviceManagementController extends ChangeNotifier {
     await loadAllData();
   }
 
-  // ✅ مسح أجهزة المستخدم الحالي
+  // ✅ مسح أجهزة المستخدم الحالي (جديد)
   void clearCurrentUserDevices() {
     _currentUserDevices = [];
     notifyListeners();

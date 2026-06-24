@@ -29,6 +29,8 @@ class _PostDetailsPageState extends State<PostDetailsPage> {
   Duration _audioDuration = Duration.zero;
   String? _videoError;
   String? _currentAudioUrl;
+  // ✅ لتتبع حالة الصوت بعد التهيئة
+  bool _audioReady = false;
 
   @override
   void initState() {
@@ -37,14 +39,14 @@ class _PostDetailsPageState extends State<PostDetailsPage> {
   }
 
   Future<void> _initVideo() async {
-    final videoUrl = widget.post.videoUrl;
+    // ✅ إصلاح: استخدام _getVideoUrl() بدلاً من videoUrl مباشرة
+    final videoUrl = _getVideoUrl();
     if (videoUrl == null || videoUrl.isEmpty) return;
 
     try {
-      final url = ApiConstants.mediaUrl(videoUrl);
-      debugPrint('🎬 VIDEO URL = $url');
+      debugPrint('🎬 VIDEO URL = $videoUrl');
 
-      final controller = VideoPlayerController.networkUrl(Uri.parse(url));
+      final controller = VideoPlayerController.networkUrl(Uri.parse(videoUrl));
       await controller.initialize();
 
       controller.addListener(_videoListener);
@@ -54,15 +56,16 @@ class _PostDetailsPageState extends State<PostDetailsPage> {
         return;
       }
 
-      _videoController = controller;
-
       setState(() {
+        _videoController = controller;
         _videoReady = true;
         _videoDuration = controller.value.duration;
         _videoError = null;
       });
     } catch (e) {
-      setState(() => _videoError = 'فشل تحميل الفيديو: ${e.toString()}');
+      if (mounted) {
+        setState(() => _videoError = 'فشل تحميل الفيديو: ${e.toString()}');
+      }
     }
   }
 
@@ -74,6 +77,7 @@ class _PostDetailsPageState extends State<PostDetailsPage> {
       setState(() {
         _isVideoPlaying = controller.value.isPlaying;
         _videoPosition = controller.value.position;
+        _videoDuration = controller.value.duration;
       });
     }
   }
@@ -84,11 +88,17 @@ class _PostDetailsPageState extends State<PostDetailsPage> {
     _currentAudioUrl = url;
     await _audioPlayer?.dispose();
     _audioPlayer = AudioPlayer();
+    _audioReady = false;
 
     try {
       await _audioPlayer!.setUrl(url);
 
-      _audioDuration = _audioPlayer!.duration ?? Duration.zero;
+      // ✅ إصلاح: الاستماع لـ durationStream بدلاً من قراءة duration مرة واحدة
+      _audioPlayer!.durationStream.listen((duration) {
+        if (mounted && duration != null) {
+          setState(() => _audioDuration = duration);
+        }
+      });
 
       _audioPlayer!.positionStream.listen((position) {
         if (mounted) {
@@ -102,7 +112,12 @@ class _PostDetailsPageState extends State<PostDetailsPage> {
         }
       });
 
-      setState(() {});
+      if (mounted) {
+        setState(() {
+          _audioReady = true;
+          _audioDuration = _audioPlayer!.duration ?? Duration.zero;
+        });
+      }
     } catch (e) {
       debugPrint('Error loading audio: $e');
     }
@@ -116,35 +131,74 @@ class _PostDetailsPageState extends State<PostDetailsPage> {
     super.dispose();
   }
 
+  // ✅ إصلاح: دالة موحدة لجلب URL الفيديو من videoUrl أو media
+  String? _getVideoUrl() {
+    if (widget.post.videoUrl != null && widget.post.videoUrl!.isNotEmpty) {
+      return ApiConstants.mediaUrl(widget.post.videoUrl!);
+    }
+    try {
+      final videoMedia = widget.post.media.firstWhere((m) => m.isVideo);
+      return ApiConstants.mediaUrl(videoMedia.filePath);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  String? _getAudioUrl() {
+    if (widget.post.audioUrl != null && widget.post.audioUrl!.isNotEmpty) {
+      return ApiConstants.mediaUrl(widget.post.audioUrl!);
+    }
+    try {
+      final audioMedia = widget.post.media.firstWhere((m) => m.isAudio);
+      return ApiConstants.mediaUrl(audioMedia.filePath);
+    } catch (e) {
+      return null;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isTablet = screenWidth >= 600;
+
+    // ✅ إصلاح: استخدام _getVideoUrl() للتحقق من وجود فيديو
+    final hasVideo = _getVideoUrl() != null;
+    final audioUrl = _getAudioUrl();
+
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
-        backgroundColor: AppColors.background,
+        backgroundColor: isDark ? Colors.black : AppColors.background,
         body: CustomScrollView(
           physics: const BouncingScrollPhysics(),
           slivers: [
-            _buildHeader(),
+            _buildPremiumAppBar(isDark),
             SliverToBoxAdapter(
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 18, 20, 28),
+                padding: EdgeInsets.symmetric(
+                  horizontal: isTablet ? 32.0 : 20.0,
+                ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _buildMeta(),
-                    const SizedBox(height: 18),
-                    _buildTitle(),
-                    const SizedBox(height: 20),
-                    _buildContent(),
-                    if (widget.post.hasVideo) ...[
-                      const SizedBox(height: 26),
-                      _buildVideoSection(),
+                    const SizedBox(height: 8),
+                    _buildTitle(isDark, isTablet),
+                    const SizedBox(height: 16),
+                    _buildAuthorAndDate(isDark),
+                    const SizedBox(height: 24),
+                    _buildContent(isDark),
+                    const SizedBox(height: 24),
+                    // ✅ إصلاح: استخدام hasVideo المبني على _getVideoUrl()
+                    if (hasVideo) ...[
+                      _buildVideoSection(isDark),
+                      const SizedBox(height: 24),
                     ],
-                    if (_getAudioUrl() != null) ...[
-                      const SizedBox(height: 18),
-                      _buildAudioSection(),
+                    if (audioUrl != null) ...[
+                      _buildAudioSection(isDark, audioUrl),
+                      const SizedBox(height: 24),
                     ],
+                    const SizedBox(height: 40),
                   ],
                 ),
               ),
@@ -155,182 +209,185 @@ class _PostDetailsPageState extends State<PostDetailsPage> {
     );
   }
 
-  String? _getAudioUrl() {
-    // ✅ التحقق من audioUrl مباشرة
-    if (widget.post.audioUrl != null && widget.post.audioUrl!.isNotEmpty) {
-      return ApiConstants.mediaUrl(widget.post.audioUrl!);
-    }
-    // ✅ التحقق من media array (بدون casting خاطئ)
-    try {
-      final audioMedia = widget.post.media.firstWhere((m) => m.isAudio);
-      return ApiConstants.mediaUrl(audioMedia.filePath);
-    } catch (e) {
-      // لا يوجد ملف صوتي في media array
-      return null;
-    }
-  }
-
-  SliverAppBar _buildHeader() {
+  // ==================== Premium App Bar ====================
+  SliverAppBar _buildPremiumAppBar(bool isDark) {
     return SliverAppBar(
+      expandedHeight: 340,
+      floating: false,
       pinned: true,
+      backgroundColor: isDark ? Colors.black : Colors.white,
+      foregroundColor: isDark ? Colors.white : Colors.black,
       elevation: 0,
-      backgroundColor: AppColors.background,
-      expandedHeight: widget.post.hasThumbnail ? 310 : 130,
       leading: Padding(
         padding: const EdgeInsets.only(right: 8),
         child: IconButton(
           onPressed: () => Navigator.pop(context),
           icon: Container(
-            width: 40,
-            height: 40,
+            padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: Colors.black.withOpacity(.35),
+              color: (isDark ? Colors.black : Colors.white).withOpacity(0.5),
               shape: BoxShape.circle,
             ),
-            child: const Icon(Icons.arrow_back, color: Colors.white, size: 20),
+            child: const Icon(Icons.arrow_back_ios, size: 18),
           ),
         ),
       ),
       flexibleSpace: FlexibleSpaceBar(
-        background: widget.post.hasThumbnail
-            ? Hero(
-                tag: 'post-${widget.post.id}',
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    CachedNetworkImage(
-                      imageUrl: ApiConstants.mediaUrl(widget.post.thumbnail!),
-                      fit: BoxFit.cover,
-                      placeholder: (_, __) =>
-                          Container(color: Colors.grey.shade200),
-                      errorWidget: (_, __, ___) => Container(
-                        color: AppColors.accent.withOpacity(.08),
-                        child: const Center(
-                            child: Icon(Icons.image_not_supported_outlined)),
-                      ),
-                    ),
-                    DecoratedBox(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
-                          colors: [
-                            Colors.transparent,
-                            Colors.black.withOpacity(.18),
-                            Colors.black.withOpacity(.28),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
+        title: Text(
+          widget.post.title,
+          style: const TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+          ),
+          overflow: TextOverflow.ellipsis,
+          maxLines: 1,
+        ),
+        centerTitle: false,
+        titlePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        background: Stack(
+          fit: StackFit.expand,
+          children: [
+            if (widget.post.hasThumbnail)
+              CachedNetworkImage(
+                imageUrl: ApiConstants.mediaUrl(widget.post.thumbnail!),
+                fit: BoxFit.cover,
+                placeholder: (context, url) => Container(
+                  color: isDark ? Colors.grey[900] : Colors.grey[200],
                 ),
-              )
-            : Container(
-                color: AppColors.accent.withOpacity(.08),
-                child: Center(
-                  child: Icon(Icons.article_outlined,
-                      size: 52, color: AppColors.accent),
+                errorWidget: (context, url, error) => Container(
+                  color: isDark ? Colors.grey[900] : Colors.grey[200],
+                  child: Icon(
+                    Icons.image_not_supported,
+                    color: isDark ? Colors.white54 : Colors.black54,
+                  ),
+                ),
+                fadeInDuration: const Duration(milliseconds: 300),
+              ),
+            Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Colors.transparent,
+                    isDark ? Colors.black : Colors.white,
+                  ],
+                  stops: const [0.6, 1.0],
                 ),
               ),
+            ),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildMeta() {
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
+  // ==================== Title ====================
+  Widget _buildTitle(bool isDark, bool isTablet) {
+    return Text(
+      widget.post.title,
+      style: TextStyle(
+        fontSize: isTablet ? 32 : 26,
+        fontWeight: FontWeight.bold,
+        height: 1.3,
+        color: isDark ? Colors.white : Colors.black87,
+      ),
+    );
+  }
+
+  // ==================== Author & Date ====================
+  Widget _buildAuthorAndDate(bool isDark) {
+    return Row(
       children: [
-        _metaChip(
-          icon: _statusIcon(),
-          text: widget.post.status.arabicName,
-          color: _statusColor(),
-        ),
-        _metaChip(
-          icon: Icons.calendar_today_outlined,
-          text: widget.post.displayDate,
-          color: Colors.grey.shade700,
-          background: Colors.grey.shade100,
-        ),
-        if (_getMediaCount() > 0)
-          _metaChip(
-            icon: Icons.attach_file_outlined,
-            text: '${_getMediaCount()} ملفات مرفقة',
-            color: AppColors.accent,
-            background: AppColors.accent.withOpacity(.08),
+        CircleAvatar(
+          radius: 20,
+          backgroundColor: isDark ? Colors.grey[800] : Colors.grey[200],
+          child: Text(
+            widget.post.author?.name ?? 'ادمن',
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              color: isDark ? Colors.white : Colors.black87,
+            ),
           ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                widget.post.author?.name ?? 'ادمن',
+                style: TextStyle(
+                  fontWeight: FontWeight.w600,
+                  color: isDark ? Colors.white : Colors.black87,
+                ),
+              ),
+              Text(
+                widget.post.displayDate,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: isDark
+                      ? Colors.white.withOpacity(0.5)
+                      : Colors.black.withOpacity(0.5),
+                ),
+              ),
+            ],
+          ),
+        ),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          decoration: BoxDecoration(
+            color: isDark ? Colors.grey[800] : Colors.grey[100],
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Row(
+            children: [
+              Icon(_statusIcon(), size: 14, color: _statusColor()),
+              const SizedBox(width: 4),
+              Text(
+                widget.post.status.arabicName,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                  color: _statusColor(),
+                ),
+              ),
+            ],
+          ),
+        ),
       ],
     );
   }
 
-  int _getMediaCount() {
-    int count = 0;
-    if (widget.post.hasVideo) count++;
-    if (widget.post.hasAudio) count++;
-    if (widget.post.hasThumbnail) count++;
-    return count;
-  }
-
-  Widget _metaChip({
-    required IconData icon,
-    required String text,
-    required Color color,
-    Color? background,
-  }) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 8),
-      decoration: BoxDecoration(
-        color: background ?? color.withOpacity(.08),
-        borderRadius: BorderRadius.circular(14),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 14, color: color),
-          const SizedBox(width: 6),
-          Text(text,
-              style: TextStyle(
-                  fontSize: 12.5, fontWeight: FontWeight.w600, color: color)),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildTitle() {
-    return Text(
-      widget.post.title,
-      style: const TextStyle(
-          fontSize: 27, fontWeight: FontWeight.w800, height: 1.28),
-    );
-  }
-
-  Widget _buildContent() {
+  // ==================== Content ====================
+  Widget _buildContent(bool isDark) {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(22),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: isDark ? Colors.grey[850] : Colors.white,
         borderRadius: BorderRadius.circular(24),
         boxShadow: [
           BoxShadow(
             blurRadius: 18,
             offset: const Offset(0, 5),
-            color: Colors.black.withOpacity(.04),
+            color: Colors.black.withOpacity(0.04),
           ),
         ],
       ),
       child: Text(
         widget.post.content,
         style: TextStyle(
-            fontSize: 16.4, height: 1.85, color: Colors.grey.shade800),
+          fontSize: 16.4,
+          height: 1.85,
+          color: isDark ? Colors.white70 : Colors.grey.shade800,
+        ),
       ),
     );
   }
 
-  Widget _buildVideoSection() {
-    final videoUrl = widget.post.videoUrl;
-    if (videoUrl == null || videoUrl.isEmpty) return const SizedBox.shrink();
-
+  // ==================== Video Section ====================
+  Widget _buildVideoSection(bool isDark) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -345,26 +402,29 @@ class _PostDetailsPageState extends State<PostDetailsPage> {
               child: const Icon(Icons.videocam, color: Colors.purple, size: 20),
             ),
             const SizedBox(width: 10),
-            const Text('فيديو مرفق',
-                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
+            const Text(
+              'فيديو مرفق',
+              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
+            ),
           ],
         ),
         const SizedBox(height: 12),
-        _buildVideoCard(),
+        _buildVideoCard(isDark),
       ],
     );
   }
 
-  Widget _buildVideoCard() {
+  Widget _buildVideoCard(bool isDark) {
     return Container(
       decoration: BoxDecoration(
         color: Colors.black,
         borderRadius: BorderRadius.circular(24),
         boxShadow: [
           BoxShadow(
-              blurRadius: 22,
-              offset: const Offset(0, 8),
-              color: Colors.black.withOpacity(.10)),
+            blurRadius: 22,
+            offset: const Offset(0, 8),
+            color: Colors.black.withOpacity(0.10),
+          ),
         ],
       ),
       child: ClipRRect(
@@ -385,6 +445,10 @@ class _PostDetailsPageState extends State<PostDetailsPage> {
                             const SizedBox(height: 12),
                             ElevatedButton(
                               onPressed: _initVideo,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.teal,
+                                foregroundColor: Colors.white,
+                              ),
                               child: const Text('إعادة المحاولة'),
                             ),
                           ],
@@ -394,28 +458,35 @@ class _PostDetailsPageState extends State<PostDetailsPage> {
               )
             : Column(
                 children: [
-                  Stack(
-                    alignment: Alignment.center,
-                    children: [
-                      AspectRatio(
-                        aspectRatio: _videoController!.value.aspectRatio,
-                        child: VideoPlayer(_videoController!),
-                      ),
-                      if (!_isVideoPlaying)
-                        GestureDetector(
-                          onTap: _toggleVideo,
+                  // ✅ إصلاح: GestureDetector يغطي كامل الفيديو للتشغيل/الإيقاف
+                  GestureDetector(
+                    onTap: _toggleVideo,
+                    child: Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        AspectRatio(
+                          aspectRatio: _videoController!.value.aspectRatio,
+                          child: VideoPlayer(_videoController!),
+                        ),
+                        AnimatedOpacity(
+                          opacity: _isVideoPlaying ? 0.0 : 1.0,
+                          duration: const Duration(milliseconds: 300),
                           child: Container(
-                            width: 74,
-                            height: 74,
+                            width: 60,
+                            height: 60,
                             decoration: BoxDecoration(
-                              color: Colors.black.withOpacity(.45),
+                              color: Colors.black.withOpacity(0.6),
                               shape: BoxShape.circle,
                             ),
-                            child: const Icon(Icons.play_arrow_rounded,
-                                color: Colors.white, size: 42),
+                            child: Icon(
+                              _isVideoPlaying ? Icons.pause : Icons.play_arrow,
+                              color: Colors.white,
+                              size: 40,
+                            ),
                           ),
                         ),
-                    ],
+                      ],
+                    ),
                   ),
                   Container(
                     padding: const EdgeInsets.symmetric(
@@ -458,13 +529,17 @@ class _PostDetailsPageState extends State<PostDetailsPage> {
                         ),
                         Row(
                           children: [
-                            Text(_formatDuration(_videoPosition),
-                                style: const TextStyle(
-                                    color: Colors.white70, fontSize: 12)),
+                            Text(
+                              _formatDuration(_videoPosition),
+                              style: const TextStyle(
+                                  color: Colors.white70, fontSize: 12),
+                            ),
                             const Spacer(),
-                            Text(_formatDuration(_videoDuration),
-                                style: const TextStyle(
-                                    color: Colors.white70, fontSize: 12)),
+                            Text(
+                              _formatDuration(_videoDuration),
+                              style: const TextStyle(
+                                  color: Colors.white70, fontSize: 12),
+                            ),
                           ],
                         ),
                       ],
@@ -476,85 +551,156 @@ class _PostDetailsPageState extends State<PostDetailsPage> {
     );
   }
 
-  Widget _buildAudioSection() {
-    final audioUrl = _getAudioUrl();
-    if (audioUrl == null) return const SizedBox.shrink();
-
+  // ==================== Audio Section ====================
+  // ✅ إصلاح: استقبال audioUrl مباشرة بدلاً من استدعاء _getAudioUrl() مجدداً
+  Widget _buildAudioSection(bool isDark, String audioUrl) {
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: isDark ? Colors.grey[850] : Colors.white,
         borderRadius: BorderRadius.circular(22),
         boxShadow: [
           BoxShadow(
-              blurRadius: 18,
-              offset: const Offset(0, 5),
-              color: Colors.black.withOpacity(.04)),
+            blurRadius: 18,
+            offset: const Offset(0, 5),
+            color: Colors.black.withOpacity(0.04),
+          ),
         ],
       ),
-      child: Row(
+      child: Column(
         children: [
-          Container(
-            width: 52,
-            height: 52,
-            decoration: BoxDecoration(
-              color: AppColors.primary.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Icon(Icons.audiotrack_rounded,
-                color: AppColors.primary, size: 28),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text('ملف صوتي',
-                    style:
-                        TextStyle(fontWeight: FontWeight.w700, fontSize: 14.5)),
-                const SizedBox(height: 3),
-                Text(_getFileNameFromUrl(audioUrl),
-                    style: const TextStyle(fontSize: 11, color: Colors.grey)),
-                if (_audioDuration.inSeconds > 0)
-                  Text(_formatDuration(_audioDuration),
-                      style: const TextStyle(fontSize: 11, color: Colors.grey)),
-              ],
-            ),
-          ),
-          GestureDetector(
-            onTap: () => _toggleAudio(audioUrl),
-            child: Container(
-              width: 50,
-              height: 50,
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    AppColors.primary,
-                    AppColors.primary.withOpacity(0.8)
+          Row(
+            children: [
+              Container(
+                width: 52,
+                height: 52,
+                decoration: BoxDecoration(
+                  color: Colors.teal.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: const Icon(
+                  Icons.audiotrack_rounded,
+                  color: Colors.teal,
+                  size: 28,
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'ملف صوتي',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 14.5,
+                        color: isDark ? Colors.white : Colors.black87,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      _getFileNameFromUrl(audioUrl),
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: isDark ? Colors.white60 : Colors.grey,
+                      ),
+                    ),
+                    if (_audioDuration.inSeconds > 0)
+                      Text(
+                        _formatDuration(_audioDuration),
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: isDark ? Colors.white60 : Colors.grey,
+                        ),
+                      ),
                   ],
                 ),
-                shape: BoxShape.circle,
               ),
-              child: Icon(
-                _isAudioPlaying ? Icons.pause : Icons.play_arrow,
-                color: Colors.white,
-                size: 28,
+              GestureDetector(
+                onTap: () => _toggleAudio(audioUrl),
+                child: Container(
+                  width: 50,
+                  height: 50,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [Colors.teal.shade400, Colors.teal.shade600],
+                    ),
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.teal.withOpacity(0.3),
+                        blurRadius: 12,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: Icon(
+                    _isAudioPlaying ? Icons.pause : Icons.play_arrow,
+                    color: Colors.white,
+                    size: 28,
+                  ),
+                ),
               ),
-            ),
+            ],
           ),
+          // ✅ إصلاح: إظهار الـ Slider بمجرد تهيئة الصوت وليس فقط أثناء التشغيل
+          if (_audioReady) ...[
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Text(
+                  _formatDuration(_audioPosition),
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: isDark ? Colors.white60 : Colors.grey,
+                  ),
+                ),
+                Expanded(
+                  child: Slider(
+                    value: _audioDuration.inSeconds == 0
+                        ? 0
+                        : _audioPosition.inSeconds
+                            .clamp(0, _audioDuration.inSeconds)
+                            .toDouble(),
+                    max: _audioDuration.inSeconds > 0
+                        ? _audioDuration.inSeconds.toDouble()
+                        : 1.0,
+                    onChanged: (value) {
+                      _audioPlayer?.seek(Duration(seconds: value.toInt()));
+                    },
+                    activeColor: Colors.teal,
+                    inactiveColor: isDark
+                        ? Colors.white.withOpacity(0.2)
+                        : Colors.black.withOpacity(0.1),
+                  ),
+                ),
+                Text(
+                  _formatDuration(_audioDuration),
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: isDark ? Colors.white60 : Colors.grey,
+                  ),
+                ),
+              ],
+            ),
+          ],
         ],
       ),
     );
   }
 
+  // ==================== Helpers ====================
   void _toggleVideo() {
     if (_videoController == null) return;
-    _isVideoPlaying ? _videoController!.pause() : _videoController!.play();
+    if (_isVideoPlaying) {
+      _videoController!.pause();
+    } else {
+      _videoController!.play();
+    }
   }
 
   void _toggleAudio(String url) async {
     await _initAudio(url);
-
     if (_audioPlayer == null) return;
 
     if (_isAudioPlaying) {

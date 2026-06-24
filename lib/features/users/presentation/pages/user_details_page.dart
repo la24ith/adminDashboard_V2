@@ -1,16 +1,7 @@
 // presentation/pages/user_details_page.dart
 
 import 'package:admin_dashboard/core/constants/app_colors.dart';
-import 'package:admin_dashboard/core/di/setup_locator.dart';
-import 'package:admin_dashboard/features/device_management/controllers/device_controller.dart';
-import 'package:admin_dashboard/features/users/domain/usecases/add_user.dart';
-import 'package:admin_dashboard/features/users/domain/usecases/delete_user.dart';
-import 'package:admin_dashboard/features/users/domain/usecases/extend_subscription.dart';
-import 'package:admin_dashboard/features/users/domain/usecases/get_subscriptions.dart';
-import 'package:admin_dashboard/features/users/domain/usecases/toggle_multi_device.dart';
-import 'package:admin_dashboard/features/users/domain/usecases/toggle_user_status.dart';
-import 'package:admin_dashboard/features/users/domain/usecases/update_subscription.dart';
-import 'package:admin_dashboard/features/users/domain/usecases/update_user.dart';
+import 'package:admin_dashboard/features/users/presentation/controllers/device_controller.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../controllers/users_controller.dart';
@@ -39,9 +30,9 @@ class _UserDetailsPageState extends State<UserDetailsPage>
   String? _deviceError;
   String? _processingDeviceId;
 
-  // ✅ متغيرات للـ Providers
-  late UsersController _usersController;
-  late DeviceManagementController _deviceController;
+  // ✅ متغيرات للـ Controllers
+  UsersController? _usersController;
+  DeviceManagementController? _deviceController;
 
   @override
   void initState() {
@@ -54,39 +45,10 @@ class _UserDetailsPageState extends State<UserDetailsPage>
       CurvedAnimation(parent: _animationController, curve: Curves.easeInOut),
     );
     _animationController.forward();
-  }
 
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-
-    // ✅ الحصول على الـ Providers من الـ Context
-    try {
-      _usersController = context.read<UsersController>();
-    } catch (e) {
-      // إذا لم يوجد UsersController، نستخدم widget.user فقط
-      _usersController = UsersController(
-        getSubscriptionsUseCase: getIt<GetSubscriptions>(),
-        createUserUseCase: getIt<CreateUser>(),
-        updateUserUseCase: getIt<UpdateUser>(),
-        deleteUserUseCase: getIt<DeleteUser>(),
-        extendSubscriptionUseCase: getIt<ExtendSubscription>(),
-        updateSubscriptionUseCase: getIt<UpdateSubscription>(),
-        toggleUserStatusUseCase: getIt<ToggleUserStatus>(),
-        toggleMultiDeviceUseCase: getIt<ToggleMultiDevice>(),
-      );
-    }
-
-    try {
-      _deviceController = context.read<DeviceManagementController>();
-    } catch (e) {
-      // إذا لم يوجد DeviceManagementController، ننشئ واحداً جديداً
-      _deviceController = DeviceManagementController();
-    }
-
-    // ✅ تحميل أجهزة المستخدم عند فتح الصفحة
+    // ✅ تأخير تحميل البيانات حتى يتم بناء الـ Widget بالكامل
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _loadUserDevices();
+      _initializeControllers();
     });
   }
 
@@ -96,8 +58,36 @@ class _UserDetailsPageState extends State<UserDetailsPage>
     super.dispose();
   }
 
+  // ✅ دالة تهيئة الـ Controllers
+  void _initializeControllers() {
+    try {
+      // محاولة الحصول على الـ Controllers من الـ Context
+      _usersController = context.read<UsersController>();
+      _deviceController = context.read<DeviceManagementController>();
+
+      // تحميل أجهزة المستخدم
+      _loadUserDevices();
+    } catch (e) {
+      // إذا لم يتم العثور على الـ Providers، نعرض رسالة خطأ
+      setState(() {
+        _deviceError = 'تعذر تحميل البيانات. يرجى المحاولة مرة أخرى.';
+        _isLoadingDevices = false;
+      });
+
+      // طباعة الخطأ للتشخيص
+      debugPrint('❌ Error initializing controllers: $e');
+    }
+  }
+
   // ✅ دالة تحميل أجهزة المستخدم
   Future<void> _loadUserDevices() async {
+    if (_deviceController == null) {
+      setState(() {
+        _deviceError = 'تعذر تحميل الأجهزة. يرجى المحاولة مرة أخرى.';
+      });
+      return;
+    }
+
     final userId = widget.user['id'].toString();
 
     setState(() {
@@ -106,9 +96,9 @@ class _UserDetailsPageState extends State<UserDetailsPage>
     });
 
     try {
-      await _deviceController.loadUserDevices(userId);
+      await _deviceController!.loadUserDevices(userId);
       setState(() {
-        _userDevices = _deviceController.currentUserDevices;
+        _userDevices = _deviceController!.currentUserDevices;
         _isLoadingDevices = false;
       });
     } catch (e) {
@@ -117,6 +107,22 @@ class _UserDetailsPageState extends State<UserDetailsPage>
         _isLoadingDevices = false;
       });
     }
+  }
+
+  // ✅ دالة للحصول على UsersController بأمان
+  UsersController _getUsersController() {
+    if (_usersController == null) {
+      throw Exception('UsersController not initialized');
+    }
+    return _usersController!;
+  }
+
+  // ✅ دالة للحصول على DeviceManagementController بأمان
+  DeviceManagementController _getDeviceController() {
+    if (_deviceController == null) {
+      throw Exception('DeviceManagementController not initialized');
+    }
+    return _deviceController!;
   }
 
   @override
@@ -814,25 +820,38 @@ class _UserDetailsPageState extends State<UserDetailsPage>
 
   // ✅ دوال التحكم بالأجهزة
   Future<void> _approveDevice(String deviceId) async {
-    setState(() => _processingDeviceId = deviceId);
+    try {
+      final controller = _getDeviceController();
+      setState(() => _processingDeviceId = deviceId);
 
-    final success = await _deviceController.approveDevice(deviceId);
+      final success = await controller.approveDevice(deviceId);
 
-    setState(() => _processingDeviceId = null);
+      setState(() => _processingDeviceId = null);
 
-    if (context.mounted) {
-      if (success) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('تمت الموافقة على الجهاز بنجاح'),
-            backgroundColor: AppColors.success,
-          ),
-        );
-        await _loadUserDevices();
-      } else {
+      if (context.mounted) {
+        if (success) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('تمت الموافقة على الجهاز بنجاح'),
+              backgroundColor: AppColors.success,
+            ),
+          );
+          await _loadUserDevices();
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(controller.error ?? 'فشل الموافقة على الجهاز'),
+              backgroundColor: AppColors.error,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      setState(() => _processingDeviceId = null);
+      if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(_deviceController.error ?? 'فشل الموافقة على الجهاز'),
+            content: Text('حدث خطأ: $e'),
             backgroundColor: AppColors.error,
           ),
         );
@@ -841,46 +860,59 @@ class _UserDetailsPageState extends State<UserDetailsPage>
   }
 
   Future<void> _blockDevice(String deviceId) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('تأكيد الحظر'),
-        content: const Text('هل أنت متأكد من حظر هذا الجهاز؟'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('إلغاء'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: ElevatedButton.styleFrom(backgroundColor: AppColors.error),
-            child: const Text('حظر'),
-          ),
-        ],
-      ),
-    );
+    try {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('تأكيد الحظر'),
+          content: const Text('هل أنت متأكد من حظر هذا الجهاز؟'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('إلغاء'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(context, true),
+              style: ElevatedButton.styleFrom(backgroundColor: AppColors.error),
+              child: const Text('حظر'),
+            ),
+          ],
+        ),
+      );
 
-    if (confirmed != true) return;
+      if (confirmed != true) return;
 
-    setState(() => _processingDeviceId = deviceId);
+      final controller = _getDeviceController();
+      setState(() => _processingDeviceId = deviceId);
 
-    final success = await _deviceController.blockDevice(deviceId);
+      final success = await controller.blockDevice(deviceId);
 
-    setState(() => _processingDeviceId = null);
+      setState(() => _processingDeviceId = null);
 
-    if (context.mounted) {
-      if (success) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('تم حظر الجهاز بنجاح'),
-            backgroundColor: AppColors.success,
-          ),
-        );
-        await _loadUserDevices();
-      } else {
+      if (context.mounted) {
+        if (success) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('تم حظر الجهاز بنجاح'),
+              backgroundColor: AppColors.success,
+            ),
+          );
+          await _loadUserDevices();
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(controller.error ?? 'فشل حظر الجهاز'),
+              backgroundColor: AppColors.error,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      setState(() => _processingDeviceId = null);
+      if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(_deviceController.error ?? 'فشل حظر الجهاز'),
+            content: Text('حدث خطأ: $e'),
             backgroundColor: AppColors.error,
           ),
         );
@@ -889,46 +921,59 @@ class _UserDetailsPageState extends State<UserDetailsPage>
   }
 
   Future<void> _deleteDevice(String deviceId) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('تأكيد الحذف'),
-        content: const Text('هل أنت متأكد من حذف هذا الجهاز؟'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('إلغاء'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: ElevatedButton.styleFrom(backgroundColor: AppColors.error),
-            child: const Text('حذف'),
-          ),
-        ],
-      ),
-    );
+    try {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('تأكيد الحذف'),
+          content: const Text('هل أنت متأكد من حذف هذا الجهاز؟'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('إلغاء'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(context, true),
+              style: ElevatedButton.styleFrom(backgroundColor: AppColors.error),
+              child: const Text('حذف'),
+            ),
+          ],
+        ),
+      );
 
-    if (confirmed != true) return;
+      if (confirmed != true) return;
 
-    setState(() => _processingDeviceId = deviceId);
+      final controller = _getDeviceController();
+      setState(() => _processingDeviceId = deviceId);
 
-    final success = await _deviceController.deleteDevice(deviceId);
+      final success = await controller.deleteDevice(deviceId);
 
-    setState(() => _processingDeviceId = null);
+      setState(() => _processingDeviceId = null);
 
-    if (context.mounted) {
-      if (success) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('تم حذف الجهاز بنجاح'),
-            backgroundColor: AppColors.success,
-          ),
-        );
-        await _loadUserDevices();
-      } else {
+      if (context.mounted) {
+        if (success) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('تم حذف الجهاز بنجاح'),
+              backgroundColor: AppColors.success,
+            ),
+          );
+          await _loadUserDevices();
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(controller.error ?? 'فشل حذف الجهاز'),
+              backgroundColor: AppColors.error,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      setState(() => _processingDeviceId = null);
+      if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(_deviceController.error ?? 'فشل حذف الجهاز'),
+            content: Text('حدث خطأ: $e'),
             backgroundColor: AppColors.error,
           ),
         );
@@ -938,17 +983,29 @@ class _UserDetailsPageState extends State<UserDetailsPage>
 
   // ✅ تحديث جميع البيانات
   Future<void> _refreshAllData() async {
-    await _usersController.refreshUserData(widget.user['id'].toString());
-    await _loadUserDevices();
+    try {
+      final controller = _getUsersController();
+      await controller.refreshUserData(widget.user['id'].toString());
+      await _loadUserDevices();
 
-    if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('تم تحديث جميع البيانات'),
-          backgroundColor: AppColors.success,
-          duration: Duration(seconds: 2),
-        ),
-      );
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('تم تحديث جميع البيانات'),
+            backgroundColor: AppColors.success,
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('فشل تحديث البيانات: $e'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
     }
   }
 
@@ -1014,240 +1071,279 @@ class _UserDetailsPageState extends State<UserDetailsPage>
       BuildContext context, String userId, int days) async {
     Navigator.pop(context);
 
-    final success = await _usersController.extendSubscription(userId, days);
+    try {
+      final controller = _getUsersController();
+      final success = await controller.extendSubscription(userId, days);
 
-    if (context.mounted) {
-      if (success) {
-        await _usersController.refreshUserData(userId);
-        await _loadUserDevices();
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text('تم تمديد الاشتراك $days يوماً'),
-            backgroundColor: AppColors.success));
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text(_usersController.error ?? 'فشل تمديد الاشتراك'),
-            backgroundColor: AppColors.error));
+      if (context.mounted) {
+        if (success) {
+          await controller.refreshUserData(userId);
+          await _loadUserDevices();
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: Text('تم تمديد الاشتراك $days يوماً'),
+              backgroundColor: AppColors.success));
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: Text(controller.error ?? 'فشل تمديد الاشتراك'),
+              backgroundColor: AppColors.error));
+        }
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('حدث خطأ: $e'),
+            backgroundColor: AppColors.error,
+          ),
+        );
       }
     }
   }
 
   // ✅ تعديل المستخدم
   void _showEditUserDialog(BuildContext context, Map<String, dynamic> user) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => UserFormPage(
-          user: user,
-          onSave: (userData) async {
-            final success = await _usersController.updateUser(
-              user['id'].toString(),
-              userData,
-            );
-            if (!success) {
-              throw Exception(_usersController.error ?? 'فشل تحديث المستخدم');
-            }
-            return true;
-          },
+    try {
+      final controller = _getUsersController();
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => UserFormPage(
+            user: user,
+            onSave: (userData) async {
+              final success = await controller.updateUser(
+                user['id'].toString(),
+                userData,
+              );
+              if (!success) {
+                throw Exception(controller.error ?? 'فشل تحديث المستخدم');
+              }
+              return true;
+            },
+          ),
         ),
-      ),
-    ).then((result) {
-      if (result == true) {
-        _refreshAllData();
+      ).then((result) {
+        if (result == true) {
+          _refreshAllData();
+        }
+      });
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('حدث خطأ: $e'),
+            backgroundColor: AppColors.error,
+          ),
+        );
       }
-    });
+    }
   }
 
   // ✅ تعديل الاشتراك
   void _showEditSubscriptionDialog(
       BuildContext context, Map<String, dynamic> user) {
-    final userId = user['id'].toString();
-    final startDateController = TextEditingController(
-        text: user['subscription_start'] ??
-            DateTime.now().toIso8601String().split('T')[0]);
-    final endDateController = TextEditingController(
-        text: user['subscription_end'] ??
-            DateTime.now()
-                .add(const Duration(days: 30))
-                .toIso8601String()
-                .split('T')[0]);
-    final planTypeController =
-        TextEditingController(text: user['plan_type'] ?? 'monthly');
-    final priceController =
-        TextEditingController(text: user['price']?.toString() ?? '199.99');
-    final maxDevicesController =
-        TextEditingController(text: user['max_devices']?.toString() ?? '1');
-    String status = user['subscription_status'] ?? 'active';
+    try {
+      final controller = _getUsersController();
+      final userId = user['id'].toString();
+      final startDateController = TextEditingController(
+          text: user['subscription_start'] ??
+              DateTime.now().toIso8601String().split('T')[0]);
+      final endDateController = TextEditingController(
+          text: user['subscription_end'] ??
+              DateTime.now()
+                  .add(const Duration(days: 30))
+                  .toIso8601String()
+                  .split('T')[0]);
+      final planTypeController =
+          TextEditingController(text: user['plan_type'] ?? 'monthly');
+      final priceController =
+          TextEditingController(text: user['price']?.toString() ?? '199.99');
+      final maxDevicesController =
+          TextEditingController(text: user['max_devices']?.toString() ?? '1');
+      String status = user['subscription_status'] ?? 'active';
 
-    showDialog(
-      context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setStateDialog) {
-          return AlertDialog(
-            title: const Text('تعديل الاشتراك'),
-            content: SizedBox(
-              width: 400,
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    TextFormField(
-                      controller: startDateController,
-                      readOnly: true,
-                      decoration: const InputDecoration(
-                        labelText: 'تاريخ البداية',
-                        prefixIcon: Icon(Icons.calendar_today),
-                        border: OutlineInputBorder(),
+      showDialog(
+        context: context,
+        builder: (context) => StatefulBuilder(
+          builder: (context, setStateDialog) {
+            return AlertDialog(
+              title: const Text('تعديل الاشتراك'),
+              content: SizedBox(
+                width: 400,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      TextFormField(
+                        controller: startDateController,
+                        readOnly: true,
+                        decoration: const InputDecoration(
+                          labelText: 'تاريخ البداية',
+                          prefixIcon: Icon(Icons.calendar_today),
+                          border: OutlineInputBorder(),
+                        ),
+                        onTap: () async {
+                          final date = await showDatePicker(
+                            context: context,
+                            initialDate:
+                                DateTime.parse(startDateController.text),
+                            firstDate: DateTime(2020),
+                            lastDate: DateTime(2030),
+                          );
+                          if (date != null) {
+                            startDateController.text =
+                                date.toIso8601String().split('T')[0];
+                            setStateDialog(() {});
+                          }
+                        },
                       ),
-                      onTap: () async {
-                        final date = await showDatePicker(
-                          context: context,
-                          initialDate: DateTime.parse(startDateController.text),
-                          firstDate: DateTime(2020),
-                          lastDate: DateTime(2030),
-                        );
-                        if (date != null) {
-                          startDateController.text =
-                              date.toIso8601String().split('T')[0];
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: endDateController,
+                        readOnly: true,
+                        decoration: const InputDecoration(
+                          labelText: 'تاريخ النهاية',
+                          prefixIcon: Icon(Icons.calendar_today),
+                          border: OutlineInputBorder(),
+                        ),
+                        onTap: () async {
+                          final date = await showDatePicker(
+                            context: context,
+                            initialDate: DateTime.parse(endDateController.text),
+                            firstDate: DateTime.parse(startDateController.text),
+                            lastDate: DateTime(2030),
+                          );
+                          if (date != null) {
+                            endDateController.text =
+                                date.toIso8601String().split('T')[0];
+                            setStateDialog(() {});
+                          }
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      DropdownButtonFormField<String>(
+                        value: planTypeController.text,
+                        decoration: const InputDecoration(
+                          labelText: 'نوع الخطة',
+                          border: OutlineInputBorder(),
+                        ),
+                        items: const [
+                          DropdownMenuItem(
+                              value: 'monthly', child: Text('شهري')),
+                          DropdownMenuItem(
+                              value: 'quarterly', child: Text('ربع سنوي')),
+                          DropdownMenuItem(
+                              value: 'yearly', child: Text('سنوي')),
+                        ],
+                        onChanged: (value) {
+                          planTypeController.text = value!;
                           setStateDialog(() {});
-                        }
-                      },
-                    ),
-                    const SizedBox(height: 12),
-                    TextFormField(
-                      controller: endDateController,
-                      readOnly: true,
-                      decoration: const InputDecoration(
-                        labelText: 'تاريخ النهاية',
-                        prefixIcon: Icon(Icons.calendar_today),
-                        border: OutlineInputBorder(),
+                        },
                       ),
-                      onTap: () async {
-                        final date = await showDatePicker(
-                          context: context,
-                          initialDate: DateTime.parse(endDateController.text),
-                          firstDate: DateTime.parse(startDateController.text),
-                          lastDate: DateTime(2030),
-                        );
-                        if (date != null) {
-                          endDateController.text =
-                              date.toIso8601String().split('T')[0];
+                      const SizedBox(height: 12),
+                      DropdownButtonFormField<String>(
+                        value: status,
+                        decoration: const InputDecoration(
+                          labelText: 'الحالة',
+                          border: OutlineInputBorder(),
+                        ),
+                        items: const [
+                          DropdownMenuItem(value: 'active', child: Text('نشط')),
+                          DropdownMenuItem(
+                              value: 'inactive', child: Text('غير نشط')),
+                          DropdownMenuItem(
+                              value: 'expired', child: Text('منتهي')),
+                        ],
+                        onChanged: (value) {
+                          status = value!;
                           setStateDialog(() {});
-                        }
-                      },
-                    ),
-                    const SizedBox(height: 12),
-                    DropdownButtonFormField<String>(
-                      value: planTypeController.text,
-                      decoration: const InputDecoration(
-                        labelText: 'نوع الخطة',
-                        border: OutlineInputBorder(),
+                        },
                       ),
-                      items: const [
-                        DropdownMenuItem(value: 'monthly', child: Text('شهري')),
-                        DropdownMenuItem(
-                            value: 'quarterly', child: Text('ربع سنوي')),
-                        DropdownMenuItem(value: 'yearly', child: Text('سنوي')),
-                      ],
-                      onChanged: (value) {
-                        planTypeController.text = value!;
-                        setStateDialog(() {});
-                      },
-                    ),
-                    const SizedBox(height: 12),
-                    DropdownButtonFormField<String>(
-                      value: status,
-                      decoration: const InputDecoration(
-                        labelText: 'الحالة',
-                        border: OutlineInputBorder(),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: priceController,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(
+                          labelText: 'السعر',
+                          prefixIcon: Icon(Icons.attach_money),
+                          border: OutlineInputBorder(),
+                        ),
                       ),
-                      items: const [
-                        DropdownMenuItem(value: 'active', child: Text('نشط')),
-                        DropdownMenuItem(
-                            value: 'inactive', child: Text('غير نشط')),
-                        DropdownMenuItem(
-                            value: 'expired', child: Text('منتهي')),
-                      ],
-                      onChanged: (value) {
-                        status = value!;
-                        setStateDialog(() {});
-                      },
-                    ),
-                    const SizedBox(height: 12),
-                    TextFormField(
-                      controller: priceController,
-                      keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(
-                        labelText: 'السعر',
-                        prefixIcon: Icon(Icons.attach_money),
-                        border: OutlineInputBorder(),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: maxDevicesController,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(
+                          labelText: 'عدد الأجهزة المسموحة',
+                          prefixIcon: Icon(Icons.devices),
+                          border: OutlineInputBorder(),
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 12),
-                    TextFormField(
-                      controller: maxDevicesController,
-                      keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(
-                        labelText: 'عدد الأجهزة المسموحة',
-                        prefixIcon: Icon(Icons.devices),
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('إلغاء'),
-              ),
-              ElevatedButton(
-                onPressed: () async {
-                  Navigator.pop(context);
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('إلغاء'),
+                ),
+                ElevatedButton(
+                  onPressed: () async {
+                    Navigator.pop(context);
 
-                  final success = await _usersController.updateSubscription(
-                    userId,
-                    {
-                      'start_date': startDateController.text,
-                      'end_date': endDateController.text,
-                      'plan_type': planTypeController.text,
-                      'status': status,
-                      'price': double.parse(priceController.text),
-                      'max_devices': int.parse(maxDevicesController.text),
-                    },
-                  );
+                    final success = await controller.updateSubscription(
+                      userId,
+                      {
+                        'start_date': startDateController.text,
+                        'end_date': endDateController.text,
+                        'plan_type': planTypeController.text,
+                        'status': status,
+                        'price': double.parse(priceController.text),
+                        'max_devices': int.parse(maxDevicesController.text),
+                      },
+                    );
 
-                  if (context.mounted) {
-                    if (success) {
-                      await _usersController.refreshUserData(userId);
-                      await _loadUserDevices();
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('تم تحديث الاشتراك بنجاح'),
-                          backgroundColor: AppColors.success,
-                        ),
-                      );
-                    } else {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(
-                              _usersController.error ?? 'فشل تحديث الاشتراك'),
-                          backgroundColor: AppColors.error,
-                        ),
-                      );
+                    if (context.mounted) {
+                      if (success) {
+                        await controller.refreshUserData(userId);
+                        await _loadUserDevices();
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('تم تحديث الاشتراك بنجاح'),
+                            backgroundColor: AppColors.success,
+                          ),
+                        );
+                      } else {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content:
+                                Text(controller.error ?? 'فشل تحديث الاشتراك'),
+                            backgroundColor: AppColors.error,
+                          ),
+                        );
+                      }
                     }
-                  }
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.accent,
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.accent,
+                  ),
+                  child: const Text('حفظ'),
                 ),
-                child: const Text('حفظ'),
-              ),
-            ],
-          );
-        },
-      ),
-    );
+              ],
+            );
+          },
+        ),
+      );
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('حدث خطأ: $e'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    }
   }
 
   // ✅ دوال مساعدة

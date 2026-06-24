@@ -30,7 +30,7 @@ class _PostFormPageState extends State<PostFormPage>
   late PostStatus _status;
   DateTime? _scheduledDate;
   bool _scheduleLater = false;
-  bool _isSaving = false;
+  // ✅ حُذف _isSaving المحلي — نعتمد على controller.isActionInProgress فقط
   String _selectedSegment = 'general';
 
   // Media files
@@ -78,10 +78,18 @@ class _PostFormPageState extends State<PostFormPage>
       duration: const Duration(milliseconds: 300),
     );
     _animationController.forward();
+
+    // ✅ الاستماع للتغييرات في الـ controller لإعادة بناء الـ widget
+    widget.controller.addListener(_onControllerChanged);
+  }
+
+  void _onControllerChanged() {
+    if (mounted) setState(() {});
   }
 
   @override
   void dispose() {
+    widget.controller.removeListener(_onControllerChanged);
     _titleController.dispose();
     _contentController.dispose();
     _animationController.dispose();
@@ -90,6 +98,9 @@ class _PostFormPageState extends State<PostFormPage>
 
   @override
   Widget build(BuildContext context) {
+    // ✅ نقرأ حالة الحفظ مباشرة من الـ controller
+    final isSaving = widget.controller.isActionInProgress;
+
     return Scaffold(
       backgroundColor: AppColors.background,
       body: FadeTransition(
@@ -185,8 +196,7 @@ class _PostFormPageState extends State<PostFormPage>
                               onDateSelected: (date) =>
                                   setState(() => _scheduledDate = date),
                             ),
-                            const SizedBox(
-                                height: 120), // Space for floating button
+                            const SizedBox(height: 120),
                           ],
                         ),
                       ),
@@ -200,7 +210,8 @@ class _PostFormPageState extends State<PostFormPage>
               left: 0,
               right: 0,
               child: PostSaveBar(
-                isSaving: _isSaving,
+                // ✅ يعتمد مباشرة على controller بدلاً من _isSaving المحلي
+                isSaving: isSaving,
                 isUploading: widget.controller.isUploadingMedia('thumbnail') ||
                     widget.controller.isUploadingMedia('video') ||
                     widget.controller.isUploadingMedia('audio'),
@@ -376,9 +387,8 @@ class _PostFormPageState extends State<PostFormPage>
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
-    if (_isSaving) return;
-
-    setState(() => _isSaving = true);
+    // ✅ نمنع الضغط المزدوج عبر الـ controller مباشرة
+    if (widget.controller.isActionInProgress) return;
 
     final isEdit = widget.post != null;
     bool success;
@@ -404,7 +414,8 @@ class _PostFormPageState extends State<PostFormPage>
         content: _contentController.text,
         status: _status,
         segment: _selectedSegment,
-        scheduledFor: _scheduleLater ? _scheduledDate : DateTime.now(),
+        // ✅ إصلاح: لا ترسل scheduledFor عند الإنشاء العادي
+        scheduledFor: _scheduleLater ? _scheduledDate : null,
         thumbnailFile: _thumbnailFile,
         thumbnailUrl: _thumbnailUrl,
         videoFile: _videoFile,
@@ -414,7 +425,10 @@ class _PostFormPageState extends State<PostFormPage>
       );
     }
 
-    if (success && mounted) {
+    // ✅ التحقق من mounted قبل أي عملية على الـ context
+    if (!mounted) return;
+
+    if (success) {
       ScaffoldMessenger.of(context).clearSnackBars();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -433,8 +447,7 @@ class _PostFormPageState extends State<PostFormPage>
         ),
       );
       Navigator.pop(context);
-    } else {
-      setState(() => _isSaving = false);
     }
+    // عند الفشل: الـ controller يضبط _error تلقائياً ويُشعر الـ listener
   }
 }

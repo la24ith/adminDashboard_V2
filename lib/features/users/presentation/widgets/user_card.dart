@@ -1,5 +1,7 @@
+// presentation/widgets/user_card.dart
+
 import 'package:admin_dashboard/core/widgets/animated_widgets.dart';
-import 'package:admin_dashboard/features/device_management/pages/user_devices_screen.dart';
+import 'package:admin_dashboard/features/users/presentation/controllers/device_controller.dart';
 import 'package:admin_dashboard/features/users/presentation/controllers/users_controller.dart';
 import 'package:admin_dashboard/features/users/presentation/pages/user_details_page.dart';
 import 'package:flutter/material.dart';
@@ -14,6 +16,7 @@ class UserCard extends StatefulWidget {
   final VoidCallback onToggleDevice;
   final VoidCallback onToggleStatus;
   final VoidCallback onDelete;
+  final VoidCallback onAddWeight; // ✅ إضافة
   final bool isDeleting;
   final VoidCallback? onRefresh;
 
@@ -26,6 +29,7 @@ class UserCard extends StatefulWidget {
     required this.onToggleDevice,
     required this.onToggleStatus,
     required this.onDelete,
+    required this.onAddWeight, // ✅ إضافة
     this.isDeleting = false,
     this.onRefresh,
   });
@@ -61,6 +65,10 @@ class _UserCardState extends State<UserCard> {
     final isMobile = screenWidth < 600;
     final isActive = widget.user['is_active'] ?? true;
 
+    // ✅ إضافة بيانات الوزن
+    final currentWeight = widget.user['current_weight'] as double?;
+    final hasWeight = currentWeight != null;
+
     final subscriptionStart =
         widget.user['subscription_start'] ?? widget.user['start_date'] ?? '—';
     final subscriptionEnd =
@@ -72,8 +80,16 @@ class _UserCardState extends State<UserCard> {
         Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (context) => UserDetailsPage(
-              user: widget.user,
+            builder: (_) => MultiProvider(
+              providers: [
+                ChangeNotifierProvider.value(
+                  value: context.read<UsersController>(),
+                ),
+                ChangeNotifierProvider.value(
+                  value: context.read<DeviceManagementController>(),
+                ),
+              ],
+              child: UserDetailsPage(user: widget.user),
             ),
           ),
         );
@@ -182,6 +198,44 @@ class _UserCardState extends State<UserCard> {
                                           maxLines: 1,
                                           overflow: TextOverflow.ellipsis,
                                         ),
+                                        // ✅ إضافة عرض الوزن
+                                        if (hasWeight) ...[
+                                          const SizedBox(height: 4),
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 8,
+                                              vertical: 2,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: Colors.green.shade50,
+                                              borderRadius:
+                                                  BorderRadius.circular(10),
+                                              border: Border.all(
+                                                color: Colors.green.shade200,
+                                              ),
+                                            ),
+                                            child: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Icon(
+                                                  Icons.fitness_center,
+                                                  size: 12,
+                                                  color: Colors.green.shade700,
+                                                ),
+                                                const SizedBox(width: 4),
+                                                Text(
+                                                  '${currentWeight.toStringAsFixed(1)} كجم',
+                                                  style: TextStyle(
+                                                    fontSize: 11,
+                                                    fontWeight: FontWeight.w600,
+                                                    color:
+                                                        Colors.green.shade700,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ],
                                       ],
                                     ),
                                   ),
@@ -200,6 +254,19 @@ class _UserCardState extends State<UserCard> {
                                               BorderRadius.circular(12)),
                                       elevation: 4,
                                       itemBuilder: (context) => [
+                                        const PopupMenuItem(
+                                          value: 'add_weight',
+                                          child: Row(
+                                            children: [
+                                              Icon(Icons.fitness_center,
+                                                  size: 18,
+                                                  color: Colors.green),
+                                              SizedBox(width: 12),
+                                              Text('إضافة وزن')
+                                            ],
+                                          ),
+                                        ),
+                                        const PopupMenuDivider(),
                                         const PopupMenuItem(
                                           value: 'edit',
                                           child: Row(
@@ -303,6 +370,36 @@ class _UserCardState extends State<UserCard> {
                               ),
 
                               const SizedBox(height: 12),
+
+                              // ✅ زر إضافة وزن سريع
+                              if (!isDeletingThisUser && !isMobile)
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: ElevatedButton.icon(
+                                        onPressed: widget.onAddWeight,
+                                        icon: const Icon(Icons.add, size: 16),
+                                        label: const Text('إضافة وزن'),
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: Colors.green,
+                                          foregroundColor: Colors.white,
+                                          padding: const EdgeInsets.symmetric(
+                                            vertical: 6,
+                                          ),
+                                          minimumSize: const Size(0, 32),
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius:
+                                                BorderRadius.circular(8),
+                                          ),
+                                          textStyle: const TextStyle(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
 
                               // Second row: Devices info (compact or normal)
                               if (showCompact)
@@ -452,6 +549,37 @@ class _UserCardState extends State<UserCard> {
                                             color: AppColors.info),
                                       ),
                                     ),
+                                  // ✅ عرض الوزن في الحالة المصغرة
+                                  if (hasWeight)
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                        vertical: 4,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: Colors.green.shade50,
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(
+                                            Icons.fitness_center,
+                                            size: 12,
+                                            color: Colors.green.shade600,
+                                          ),
+                                          const SizedBox(width: 4),
+                                          Text(
+                                            '${currentWeight.toStringAsFixed(1)} كجم',
+                                            style: TextStyle(
+                                              fontSize: 10,
+                                              fontWeight: FontWeight.w600,
+                                              color: Colors.green.shade600,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
                                 ],
                               ),
 
@@ -526,34 +654,97 @@ class _UserCardState extends State<UserCard> {
     );
   }
 
+  // ... (existing helper methods: _formatDate, _buildInfoItem,
+  // _buildCompactInfoItem, _buildStatusBadge)
+
+  void _handleMenuAction(String value, bool isDeletingThisUser) {
+    if (isDeletingThisUser) return;
+    if (!mounted || _isDisposed) return;
+
+    switch (value) {
+      case 'add_weight': // ✅ إضافة
+        widget.onAddWeight();
+        break;
+      case 'edit':
+        widget.onEdit();
+        break;
+      case 'extend':
+        widget.onExtend();
+        break;
+      case 'edit_subscription':
+        widget.onEditSubscription();
+        break;
+      case 'toggle_device':
+        widget.onToggleDevice();
+        break;
+      case 'toggle_status':
+        widget.onToggleStatus();
+        break;
+      case 'delete':
+        widget.onDelete();
+        break;
+    }
+  }
+  // presentation/widgets/user_card.dart
+
+// ... (بقية الكود)
+
+  // ✅ دالة تنسيق التاريخ
   String _formatDate(dynamic dateValue) {
     if (dateValue == null || dateValue == '—') return '—';
     try {
-      final date = DateTime.parse(dateValue);
-      return '${date.day}/${date.month}/${date.year}';
+      // إذا كان التاريخ نصاً
+      if (dateValue is String) {
+        final date = DateTime.parse(dateValue);
+        return '${date.day}/${date.month}/${date.year}';
+      }
+      // إذا كان التاريخ من نوع DateTime
+      if (dateValue is DateTime) {
+        return '${dateValue.day}/${dateValue.month}/${dateValue.year}';
+      }
+      return dateValue.toString();
     } catch (e) {
       return dateValue.toString();
     }
   }
 
-  Widget _buildInfoItem(
-      {required IconData icon, required String label, required String value}) {
+  // ✅ دالة عرض معلومات عادية
+  Widget _buildInfoItem({
+    required IconData icon,
+    required String label,
+    required String value,
+    Color? iconColor,
+  }) {
     return Row(
       children: [
-        Icon(icon, size: 14, color: AppColors.textTertiary),
-        const SizedBox(width: 6),
+        Icon(
+          icon,
+          size: 16,
+          color: iconColor ?? AppColors.textTertiary,
+        ),
+        const SizedBox(width: 8),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(label,
-                  style: const TextStyle(
-                      fontSize: 10, color: AppColors.textTertiary)),
+              Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 11,
+                  color: AppColors.textTertiary,
+                  fontWeight: FontWeight.w400,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
               const SizedBox(height: 2),
               Text(
                 value,
-                style:
-                    const TextStyle(fontSize: 11, fontWeight: FontWeight.w500),
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.black87,
+                ),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
@@ -564,20 +755,37 @@ class _UserCardState extends State<UserCard> {
     );
   }
 
-  Widget _buildCompactInfoItem(
-      {required IconData icon, required String label, required String value}) {
+  // ✅ دالة عرض معلومات مدمجة (للشاشات الصغيرة)
+  Widget _buildCompactInfoItem({
+    required IconData icon,
+    required String label,
+    required String value,
+    Color? iconColor,
+  }) {
     return Row(
       children: [
-        Icon(icon, size: 14, color: AppColors.textTertiary),
+        Icon(
+          icon,
+          size: 14,
+          color: iconColor ?? AppColors.textTertiary,
+        ),
         const SizedBox(width: 8),
         Text(
           '$label: ',
-          style: const TextStyle(fontSize: 11, color: AppColors.textTertiary),
+          style: const TextStyle(
+            fontSize: 12,
+            color: AppColors.textTertiary,
+            fontWeight: FontWeight.w400,
+          ),
         ),
         Expanded(
           child: Text(
             value,
-            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500),
+            style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: Colors.black87,
+            ),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),
@@ -586,6 +794,7 @@ class _UserCardState extends State<UserCard> {
     );
   }
 
+  // ✅ دالة عرض حالة المستخدم
   Widget _buildStatusBadge(bool isExpired, int daysRemaining, bool isActive) {
     String text;
     Color color;
@@ -610,38 +819,110 @@ class _UserCardState extends State<UserCard> {
     }
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
-          color: bgColor, borderRadius: BorderRadius.circular(12)),
-      child: Text(text,
-          style: TextStyle(
-              fontSize: 10, fontWeight: FontWeight.w600, color: color)),
+        color: bgColor,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: color.withOpacity(0.3),
+          width: 1,
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 6,
+            height: 6,
+            decoration: BoxDecoration(
+              color: color,
+              shape: BoxShape.circle,
+            ),
+          ),
+          const SizedBox(width: 6),
+          Text(
+            text,
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w600,
+              color: color,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
-  void _handleMenuAction(String value, bool isDeletingThisUser) {
-    if (isDeletingThisUser) return;
-    if (!mounted || _isDisposed) return;
+  // ✅ دالة عرض معلومات الوزن (مضافة)
+  Widget _buildWeightInfo(double? weight) {
+    if (weight == null) return const SizedBox.shrink();
 
-    switch (value) {
-      case 'edit':
-        widget.onEdit();
-        break;
-      case 'extend':
-        widget.onExtend();
-        break;
-      case 'edit_subscription':
-        widget.onEditSubscription();
-        break;
-      case 'toggle_device':
-        widget.onToggleDevice();
-        break;
-      case 'toggle_status':
-        widget.onToggleStatus();
-        break;
-      case 'delete':
-        widget.onDelete();
-        break;
-    }
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: Colors.green.shade50,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: Colors.green.shade200,
+          width: 1,
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.fitness_center,
+            size: 12,
+            color: Colors.green.shade600,
+          ),
+          const SizedBox(width: 4),
+          Text(
+            '${weight.toStringAsFixed(1)} كجم',
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w600,
+              color: Colors.green.shade600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ✅ دالة عرض معلومات المستخدم الكاملة (اختياري)
+  Widget _buildUserInfoRow({
+    required String label,
+    required String value,
+    bool isCompact = false,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: isCompact ? 80 : 100,
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: isCompact ? 11 : 12,
+                color: AppColors.textTertiary,
+                fontWeight: FontWeight.w400,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: TextStyle(
+                fontSize: isCompact ? 11 : 12,
+                fontWeight: FontWeight.w500,
+                color: Colors.black87,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }

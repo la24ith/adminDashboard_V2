@@ -1,6 +1,9 @@
 // presentation/controllers/users_controller.dart
 
+import 'package:admin_dashboard/features/users/domain/entities/weight_entity.dart';
 import 'package:admin_dashboard/features/users/domain/usecases/add_user.dart';
+import 'package:admin_dashboard/features/users/domain/usecases/add_weight.dart';
+import 'package:admin_dashboard/features/users/domain/usecases/get_user_weight_history.dart';
 import 'package:flutter/material.dart';
 import 'package:dartz/dartz.dart';
 import '../../domain/entities/user_subscription_entity.dart';
@@ -24,7 +27,10 @@ class UsersController extends ChangeNotifier {
   final UpdateSubscription updateSubscriptionUseCase;
   final ToggleUserStatus toggleUserStatusUseCase;
   final ToggleMultiDevice toggleMultiDeviceUseCase;
-
+  final AddWeight addWeightUseCase;
+  final GetUserWeightHistory getUserWeightHistoryUseCase;
+  List<WeightEntity> get weightHistory => _weightHistory;
+  bool get isLoadingWeightHistory => _isLoadingWeightHistory;
   // ✅ State
   List<Map<String, dynamic>> _users = [];
   bool _isLoading = false;
@@ -33,7 +39,8 @@ class UsersController extends ChangeNotifier {
   String? _deletingUserId;
   String? _error;
   String? _successMessage;
-
+  List<WeightEntity> _weightHistory = [];
+  bool _isLoadingWeightHistory = false;
   // ✅ Pagination State
   int _currentPage = 1;
   int _perPage = 20;
@@ -63,6 +70,8 @@ class UsersController extends ChangeNotifier {
     required this.updateSubscriptionUseCase,
     required this.toggleUserStatusUseCase,
     required this.toggleMultiDeviceUseCase,
+    required this.addWeightUseCase,
+    required this.getUserWeightHistoryUseCase,
   }) {
     loadUsers();
   }
@@ -294,6 +303,81 @@ class UsersController extends ChangeNotifier {
         return true;
       },
     );
+  }
+
+  Future<bool> addWeight({
+    required int userId,
+    required double weight,
+    required String recordedDate,
+    String? notes,
+  }) async {
+    _startAction();
+
+    final result = await addWeightUseCase(
+      userId: userId,
+      weight: weight,
+      recordedDate: recordedDate,
+      notes: notes,
+    );
+
+    return result.fold(
+      (failure) {
+        _error = failure.message;
+        _finishAction();
+        return false;
+      },
+      (weightEntity) {
+        _successMessage = 'تم إضافة الوزن بنجاح';
+        // تحديث المستخدم في القائمة
+        loadUsers(refresh: true);
+        _finishAction();
+        return true;
+      },
+    );
+  }
+
+  // ✅ 🆕 جلب تاريخ الأوزان لمستخدم
+  Future<List<WeightEntity>> getUserWeightHistory(
+    int userId, {
+    int limit = 10,
+  }) async {
+    _isLoadingWeightHistory = true;
+    notifyListeners();
+
+    final result = await getUserWeightHistoryUseCase(userId, limit: limit);
+
+    return result.fold(
+      (failure) {
+        _error = failure.message;
+        _isLoadingWeightHistory = false;
+        notifyListeners();
+        return <WeightEntity>[];
+      },
+      (weights) {
+        _weightHistory = weights;
+        _isLoadingWeightHistory = false;
+        notifyListeners();
+        return weights;
+      },
+    );
+  }
+
+  // ✅ الحصول على آخر وزن للمستخدم
+  double? getLastWeight(int userId) {
+    final user = _users.firstWhere(
+      (u) => u['id'] == userId,
+      orElse: () => {},
+    );
+    return user['current_weight'] as double?;
+  }
+
+  // ✅ الحصول على تاريخ آخر وزن للمستخدم
+  String? getLastWeightDate(int userId) {
+    final user = _users.firstWhere(
+      (u) => u['id'] == userId,
+      orElse: () => {},
+    );
+    return user['last_weight_date'] as String?;
   }
 
   // ✅ 🔄 تبديل وضع الأجهزة المتعددة

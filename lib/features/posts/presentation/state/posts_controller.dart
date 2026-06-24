@@ -1,4 +1,5 @@
-//import 'package:ffmpeg_kit_flutter_new/ffmpeg_kit.dart';
+import 'package:ffmpeg_kit_flutter_new/ffmpeg_kit.dart';
+import 'package:ffmpeg_kit_flutter_new/return_code.dart';
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:path_provider/path_provider.dart';
@@ -8,9 +9,8 @@ import '../../../../core/network/dio_client.dart';
 import '../../../../core/constants/api_constants.dart';
 import '../../data/models/post_model.dart';
 import '../../data/repositories/post_repository.dart';
-//import 'package:mime/mime.dart';
+import 'package:mime/mime.dart';
 import 'package:path/path.dart' as path;
-import 'package:path_provider/path_provider.dart';
 
 class PostsController extends ChangeNotifier {
   // Posts data
@@ -22,6 +22,7 @@ class PostsController extends ChangeNotifier {
   static const int _postsPerPage = 20;
   bool _hasContext = false;
   BuildContext? _context;
+
   // Actions state
   bool _isActionInProgress = false;
   String? _error;
@@ -32,15 +33,16 @@ class PostsController extends ChangeNotifier {
     _hasContext = true;
   }
 
-  // ✅ دالة مساعدة للتحقق من وجود Context
+  // دالة مساعدة للتحقق من وجود Context
   bool get hasValidContext => _hasContext && _context != null;
-  // ✅ دالة مساعدة لعرض SnackBar بأمان
-  void _showErrorSnackBar(String message) {
+
+  // دالة مساعدة لعرض SnackBar بأمان
+  void _showSnackBar(String message, {bool isError = false}) {
     if (_hasContext && _context != null) {
       ScaffoldMessenger.of(_context!).showSnackBar(
         SnackBar(
           content: Text(message),
-          backgroundColor: Colors.red,
+          backgroundColor: isError ? Colors.red : Colors.green,
           behavior: SnackBarBehavior.floating,
           duration: const Duration(seconds: 3),
         ),
@@ -61,7 +63,6 @@ class PostsController extends ChangeNotifier {
   // Safe notifyListeners - prevents calls after dispose and during build
   void _safeNotify() {
     if (!_isDisposed) {
-      // Schedule microtask to avoid calling notifyListeners during build
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!_isDisposed) {
           notifyListeners();
@@ -73,7 +74,6 @@ class PostsController extends ChangeNotifier {
   @override
   void dispose() {
     _isDisposed = true;
-    // Clean up any resources if needed (e.g., cancel ongoing uploads)
     super.dispose();
   }
 
@@ -90,7 +90,7 @@ class PostsController extends ChangeNotifier {
   bool isUploadingMedia(String key) => _uploadingMedia[key] ?? false;
   double getUploadProgress(String key) => _uploadProgressMap[key] ?? 0.0;
 
-  PostsController() {}
+  PostsController();
 
   Future<void> init() async {
     await loadPosts();
@@ -161,7 +161,7 @@ class PostsController extends ChangeNotifier {
     } catch (e) {
       if (_isDisposed) return;
       _error = _getErrorMessage(e);
-      _hasMore = false; // في حالة الخطأ، لا نحاول تحميل المزيد
+      _hasMore = false;
     } finally {
       if (!_isDisposed) {
         _isLoadingMore = false;
@@ -226,7 +226,11 @@ class PostsController extends ChangeNotifier {
 
       if (_isDisposed) return false;
 
+      // ✅ إيقاف حالة الحفظ أولاً قبل تحميل المنشورات
       _successMessage = 'تم إنشاء المنشور بنجاح';
+      _isActionInProgress = false;
+      _safeNotify();
+
       _repository.clearCache();
       _resetPagination();
       await loadPosts(forceRefresh: true);
@@ -236,8 +240,10 @@ class PostsController extends ChangeNotifier {
       _error = _getErrorMessage(e);
       return false;
     } finally {
-      if (!_isDisposed) {
-        _setActionState(false);
+      // نضمن إعادة الحالة في حال وقع استثناء
+      if (!_isDisposed && _isActionInProgress) {
+        _isActionInProgress = false;
+        _safeNotify();
       }
     }
   }
@@ -267,7 +273,8 @@ class PostsController extends ChangeNotifier {
       if (title != null) updateData['title'] = title;
       if (content != null) updateData['content'] = content;
       if (status != null) updateData['status'] = status.apiValue;
-      if (status != null) updateData['segment'] = segment;
+      // ✅ إصلاح: segment مستقل عن status
+      if (segment != null) updateData['segment'] = segment;
       if (scheduledFor != null)
         updateData['scheduled_for'] = scheduledFor.toIso8601String();
 
@@ -288,7 +295,11 @@ class PostsController extends ChangeNotifier {
 
       if (_isDisposed) return false;
 
+      // ✅ إيقاف حالة الحفظ أولاً قبل تحميل المنشورات
       _successMessage = 'تم تحديث المنشور';
+      _isActionInProgress = false;
+      _safeNotify();
+
       _repository.clearCache();
       _resetPagination();
       await loadPosts(forceRefresh: true);
@@ -298,8 +309,10 @@ class PostsController extends ChangeNotifier {
       _error = _getErrorMessage(e);
       return false;
     } finally {
-      if (!_isDisposed) {
-        _setActionState(false);
+      // نضمن إعادة الحالة في حال وقع استثناء
+      if (!_isDisposed && _isActionInProgress) {
+        _isActionInProgress = false;
+        _safeNotify();
       }
     }
   }
@@ -349,6 +362,9 @@ class PostsController extends ChangeNotifier {
 
       if (response.statusCode == 200) {
         _successMessage = 'تمت الجدولة بنجاح';
+        _isActionInProgress = false;
+        _safeNotify();
+
         _repository.clearCache();
         _resetPagination();
         await loadPosts(forceRefresh: true);
@@ -360,8 +376,9 @@ class PostsController extends ChangeNotifier {
       _error = _getErrorMessage(e);
       return false;
     } finally {
-      if (!_isDisposed) {
-        _setActionState(false);
+      if (!_isDisposed && _isActionInProgress) {
+        _isActionInProgress = false;
+        _safeNotify();
       }
     }
   }
@@ -400,43 +417,29 @@ class PostsController extends ChangeNotifier {
       await _updatePostField(postId, 'audio_url', audioUrl);
     }
   }
-// lib/features/posts/presentation/state/posts_controller.dart
 
-// ✅ دالة تحديد MIME type بشكل صحيح للملفات الصوتية
+  // دالة تحديد MIME type بشكل صحيح للملفات
   String _getCorrectMimeType(File file, String type) {
-    final path = file.path;
-    final extension = path.split('.').last.toLowerCase();
+    final filePath = file.path;
+    final extension = filePath.split('.').last.toLowerCase();
 
     debugPrint(
-        '🔍 Detecting MIME for: $path, type: $type, extension: $extension');
+        '🔍 Detecting MIME for: $filePath, type: $type, extension: $extension');
 
-    // ✅ للصوت - تحديد دقيق
     if (type == 'audio') {
-      // التحقق من امتداد الملف
-      if (extension == 'mp3') {
-        return 'audio/mpeg';
-      }
-      if (extension == 'm4a') {
-        return 'audio/mp4'; // ✅ M4A هو audio/mp4 وليس video/mp4
-      }
-      if (extension == 'aac') {
-        return 'audio/aac';
-      }
-      if (extension == 'wav') {
-        return 'audio/wav';
-      }
-      // التحقق من محتوى الملف إذا كان الامتداد غير واضح
+      if (extension == 'mp3') return 'audio/mpeg';
+      if (extension == 'm4a') return 'audio/mp4';
+      if (extension == 'aac') return 'audio/aac';
+      if (extension == 'wav') return 'audio/wav';
       return 'audio/mpeg';
     }
 
-    // للفيديو
     if (type == 'video') {
       if (extension == 'mp4') return 'video/mp4';
       if (extension == 'mov') return 'video/quicktime';
       return 'video/mp4';
     }
 
-    // للصور
     if (type == 'image') {
       if (extension == 'png') return 'image/png';
       if (extension == 'jpg' || extension == 'jpeg') return 'image/jpeg';
@@ -446,20 +449,27 @@ class PostsController extends ChangeNotifier {
     return 'application/octet-stream';
   }
 
+  // ✅ إصلاح: تحويل الصوت فقط (وليس جميع الملفات) مع التحقق من نجاح FFmpeg
   Future<File> _convertAudioFile(File file) async {
     final extension = file.path.split('.').last.toLowerCase();
 
-    // إذا كان الملف بصيغة m4a، حوله إلى mp3
     if (extension == 'm4a') {
       try {
-        final tempDir = await getTemporaryDirectory();
         final newPath = file.path.replaceAll('.m4a', '.mp3');
         final mp3File = File(newPath);
 
-        // انسخ الملف مع تغيير الامتداد
-        await file.copy(mp3File.path);
-        debugPrint('✅ Converted m4a to mp3: ${mp3File.path}');
-        return mp3File;
+        final session = await FFmpegKit.execute(
+          '-i ${file.path} -codec:a libmp3lame -qscale:a 2 ${mp3File.path}',
+        );
+        final returnCode = await session.getReturnCode();
+
+        if (ReturnCode.isSuccess(returnCode)) {
+          debugPrint('✅ Converted m4a to mp3: ${mp3File.path}');
+          return mp3File;
+        } else {
+          debugPrint('⚠️ FFmpeg conversion failed, using original');
+          return file;
+        }
       } catch (e) {
         debugPrint('⚠️ Conversion failed, using original: $e');
         return file;
@@ -493,13 +503,11 @@ class PostsController extends ChangeNotifier {
         apiType = type;
     }
 
-    final extension = file.path.split('.').last.toLowerCase();
-    final fileName =
-        '${type}_${DateTime.now().millisecondsSinceEpoch}.$extension';
     File uploadFile = file;
 
-    if (!file.path.endsWith('.mp3')) {
-      uploadFile = await convertToMp3(file);
+    // ✅ إصلاح: تحويل الصوت فقط وليس جميع أنواع الملفات
+    if (type == 'audio' && !file.path.endsWith('.mp3')) {
+      uploadFile = await _convertAudioFile(file);
     }
 
     final formData = FormData.fromMap({
@@ -507,6 +515,7 @@ class PostsController extends ChangeNotifier {
       'file': await MultipartFile.fromFile(
         uploadFile.path,
         filename: path.basename(uploadFile.path),
+        contentType: DioMediaType.parse(_getCorrectMimeType(uploadFile, type)),
       ),
       'sort_order': '0',
     });
@@ -552,18 +561,16 @@ class PostsController extends ChangeNotifier {
           await _updatePostField(postId, fieldName, cleanPath);
           debugPrint('✅ Uploaded: $cleanPath');
 
-          // ✅ عرض رسالة نجاح
-          _showErrorSnackBar('تم رفع ${_getTypeName(type)} بنجاح');
+          _showSnackBar('تم رفع ${_getTypeName(type)} بنجاح');
         }
       }
     } on DioException catch (e) {
       debugPrint('❌ Upload error: ${e.response?.statusCode}');
       debugPrint('   Response: ${e.response?.data}');
 
-      // ✅ عرض رسالة خطأ
       String errorMsg =
           e.response?.data?['message'] ?? e.message ?? 'فشل الرفع';
-      _showErrorSnackBar(errorMsg);
+      _showSnackBar(errorMsg, isError: true);
       rethrow;
     } finally {
       if (!_isDisposed) {
@@ -573,7 +580,7 @@ class PostsController extends ChangeNotifier {
     }
   }
 
-// ✅ دالة مساعدة للحصول على اسم النوع بالعربية
+  // دالة مساعدة للحصول على اسم النوع بالعربية
   String _getTypeName(String type) {
     switch (type) {
       case 'thumbnail':
@@ -589,7 +596,6 @@ class PostsController extends ChangeNotifier {
 
   Future<File> _compressVideoIfNeeded(File videoFile) async {
     final originalSizeMB = await videoFile.length() / (1024 * 1024);
-    // Removed print
 
     if (originalSizeMB > 10) {
       try {
@@ -601,22 +607,18 @@ class PostsController extends ChangeNotifier {
           frameRate: 30,
         );
         if (compressed != null && compressed.file != null) {
-          final compressedFile = File(compressed.file!.path);
-          // Removed print
-          return compressedFile;
+          return File(compressed.file!.path);
         }
       } catch (e) {
-        // Removed print
+        debugPrint('⚠️ Video compression failed: $e');
       }
     }
     return videoFile;
   }
 
-  String _cleanFilePath(String path) {
-    // ✅ تنظيف المسار بشكل صحيح
-    String cleanPath = path;
+  String _cleanFilePath(String filePath) {
+    String cleanPath = filePath;
 
-    // إزالة البادئات الزائدة إذا وجدت
     List<String> prefixesToRemove = [
       '/storage/',
       'storage/',
@@ -632,12 +634,11 @@ class PostsController extends ChangeNotifier {
       }
     }
 
-    // ✅ التأكد من أن المسار يبدأ بـ post-media/
     if (!cleanPath.startsWith('post-media/') && cleanPath.isNotEmpty) {
       cleanPath = 'post-media/$cleanPath';
     }
 
-    debugPrint('🧹 Cleaned path: $path -> $cleanPath');
+    debugPrint('🧹 Cleaned path: $filePath -> $cleanPath');
     return cleanPath;
   }
 
@@ -738,13 +739,21 @@ class PostsController extends ChangeNotifier {
     }
   }
 
+  // ✅ إصلاح: التحقق من نجاح FFmpeg قبل إرجاع الملف
   Future<File> convertToMp3(File inputFile) async {
     final outputPath = inputFile.path.replaceAll('.m4a', '.mp3');
 
-    /* await FFmpegKit.execute(
+    final session = await FFmpegKit.execute(
       '-i ${inputFile.path} -codec:a libmp3lame -qscale:a 2 $outputPath',
-    );*/
+    );
 
-    return File(outputPath);
+    final returnCode = await session.getReturnCode();
+    if (ReturnCode.isSuccess(returnCode)) {
+      debugPrint('✅ convertToMp3 success: $outputPath');
+      return File(outputPath);
+    } else {
+      debugPrint('⚠️ convertToMp3 failed, returning original');
+      return inputFile;
+    }
   }
 }

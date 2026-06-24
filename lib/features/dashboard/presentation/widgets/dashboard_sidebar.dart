@@ -68,11 +68,6 @@ class DashboardSidebar extends StatelessWidget {
                   title: 'تقارير المستخدمين ',
                   page: AdminPage.reports,
                 ),
-                _buildMenuItem(
-                  icon: Icons.devices,
-                  title: 'ادارةالاجهزة',
-                  page: AdminPage.devices,
-                ),
               ],
             ),
           ),

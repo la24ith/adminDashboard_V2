@@ -4,7 +4,8 @@ import 'dart:async';
 
 import 'package:admin_dashboard/core/constants/app_colors.dart';
 import 'package:admin_dashboard/core/di/setup_locator.dart';
-import 'package:admin_dashboard/features/device_management/controllers/device_controller.dart';
+import 'package:admin_dashboard/features/users/presentation/pages/add_weight_page.dart';
+import 'package:admin_dashboard/features/users/presentation/pages/subscription_edit_page.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../controllers/users_controller.dart';
@@ -273,6 +274,9 @@ class _UsersPageContentState extends State<_UsersPageContent> {
                                 onDelete: () =>
                                     _deleteUser(context, controller, user),
                                 isDeleting: isDeletingThisUser,
+                                onAddWeight: () {
+                                  _showAddWeightPage(context, user);
+                                },
                               );
                             },
                           ),
@@ -345,194 +349,69 @@ class _UsersPageContentState extends State<_UsersPageContent> {
     );
   }
 
-  void _showEditSubscriptionDialog(BuildContext context,
-      UsersController controller, Map<String, dynamic> user) {
-    final userId = user['id'].toString();
-    final startDateController = TextEditingController(
-        text: user['subscription_start'] != null
-            ? user['subscription_start']
-            : DateTime.now().toIso8601String().split('T')[0]);
-    final endDateController = TextEditingController(
-        text: user['subscription_end'] != null
-            ? user['subscription_end']
-            : DateTime.now()
-                .add(const Duration(days: 30))
-                .toIso8601String()
-                .split('T')[0]);
-    final planTypeController =
-        TextEditingController(text: user['plan_type'] ?? 'monthly');
-    final priceController =
-        TextEditingController(text: user['price']?.toString() ?? '199.99');
-    final maxDevicesController =
-        TextEditingController(text: user['max_devices']?.toString() ?? '1');
-    String status = user['subscription_status'] ?? 'active';
+  // ✅ دوال العرض (نفسها موجودة في الملف الأصلي)
+  Future<void> _showUserForm(BuildContext context, UsersController controller,
+      {Map<String, dynamic>? user}) async {
+    final result = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => UserFormPage(
+          user: user,
+          onSave: (userData) async {
+            final success = user == null
+                ? await controller.createUser(userData)
+                : await controller.updateUser(user['id'].toString(), userData);
 
-    showDialog(
-      context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setStateDialog) {
-          return AlertDialog(
-            title: const Text('تعديل الاشتراك'),
-            content: SizedBox(
-              width: 400,
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    TextFormField(
-                      controller: startDateController,
-                      readOnly: true,
-                      decoration: const InputDecoration(
-                        labelText: 'تاريخ البداية',
-                        prefixIcon: Icon(Icons.calendar_today),
-                        border: OutlineInputBorder(),
-                      ),
-                      onTap: () async {
-                        final date = await showDatePicker(
-                          context: context,
-                          initialDate: DateTime.parse(startDateController.text),
-                          firstDate: DateTime(2020),
-                          lastDate: DateTime(2030),
-                        );
-                        if (date != null) {
-                          startDateController.text =
-                              date.toIso8601String().split('T')[0];
-                          setStateDialog(() {});
-                        }
-                      },
-                    ),
-                    const SizedBox(height: 12),
-                    TextFormField(
-                      controller: endDateController,
-                      readOnly: true,
-                      decoration: const InputDecoration(
-                        labelText: 'تاريخ النهاية',
-                        prefixIcon: Icon(Icons.calendar_today),
-                        border: OutlineInputBorder(),
-                      ),
-                      onTap: () async {
-                        final date = await showDatePicker(
-                          context: context,
-                          initialDate: DateTime.parse(endDateController.text),
-                          firstDate: DateTime.parse(startDateController.text),
-                          lastDate: DateTime(2030),
-                        );
-                        if (date != null) {
-                          endDateController.text =
-                              date.toIso8601String().split('T')[0];
-                          setStateDialog(() {});
-                        }
-                      },
-                    ),
-                    const SizedBox(height: 12),
-                    DropdownButtonFormField<String>(
-                      value: planTypeController.text,
-                      decoration: const InputDecoration(
-                        labelText: 'نوع الخطة',
-                        border: OutlineInputBorder(),
-                      ),
-                      items: const [
-                        DropdownMenuItem(value: 'monthly', child: Text('شهري')),
-                        DropdownMenuItem(
-                            value: 'quarterly', child: Text('ربع سنوي')),
-                        DropdownMenuItem(value: 'yearly', child: Text('سنوي')),
-                      ],
-                      onChanged: (value) {
-                        planTypeController.text = value!;
-                        setStateDialog(() {});
-                      },
-                    ),
-                    const SizedBox(height: 12),
-                    DropdownButtonFormField<String>(
-                      value: status,
-                      decoration: const InputDecoration(
-                        labelText: 'الحالة',
-                        border: OutlineInputBorder(),
-                      ),
-                      items: const [
-                        DropdownMenuItem(value: 'active', child: Text('نشط')),
-                        DropdownMenuItem(
-                            value: 'inactive', child: Text('غير نشط')),
-                        DropdownMenuItem(
-                            value: 'expired', child: Text('منتهي')),
-                      ],
-                      onChanged: (value) {
-                        status = value!;
-                        setStateDialog(() {});
-                      },
-                    ),
-                    const SizedBox(height: 12),
-                    TextFormField(
-                      controller: priceController,
-                      keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(
-                        labelText: 'السعر',
-                        prefixIcon: Icon(Icons.attach_money),
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    TextFormField(
-                      controller: maxDevicesController,
-                      keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(
-                        labelText: 'عدد الأجهزة المسموحة',
-                        prefixIcon: Icon(Icons.devices),
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            actions: [
-              TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text('إلغاء')),
-              ElevatedButton(
-                onPressed: () async {
-                  Navigator.pop(context);
-
-                  final success = await controller.updateSubscription(
-                    userId,
-                    {
-                      'start_date': startDateController.text,
-                      'end_date': endDateController.text,
-                      'plan_type': planTypeController.text,
-                      'status': status,
-                      'price': double.parse(priceController.text),
-                      'max_devices': int.parse(maxDevicesController.text),
-                    },
-                  );
-
-                  if (context.mounted) {
-                    if (success) {
-                      await controller.refreshUserData(userId);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                            content: Text('تم تحديث الاشتراك بنجاح'),
-                            backgroundColor: AppColors.success),
-                      );
-                    } else {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                            content:
-                                Text(controller.error ?? 'فشل تحديث الاشتراك'),
-                            backgroundColor: AppColors.error),
-                      );
-                    }
-                  }
-                },
-                style:
-                    ElevatedButton.styleFrom(backgroundColor: AppColors.accent),
-                child: const Text('حفظ'),
-              ),
-            ],
-          );
-        },
+            if (!success) {
+              throw Exception(controller.error ??
+                  (user == null ? 'فشل إنشاء المستخدم' : 'فشل تحديث المستخدم'));
+            }
+            return true;
+          },
+        ),
       ),
     );
+
+    if (result == true) {
+      await controller.loadUsers(refresh: true);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).clearSnackBars();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(controller.successMessage ??
+                (user == null
+                    ? 'تم إنشاء المستخدم بنجاح'
+                    : 'تم تحديث المستخدم بنجاح')),
+            backgroundColor: AppColors.success,
+            behavior: SnackBarBehavior.floating,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+        controller.clearMessages();
+      }
+    }
   }
+
+  void _showEditSubscriptionDialog(
+    BuildContext context,
+    UsersController controller,
+    Map<String, dynamic> user,
+  ) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => SubscriptionEditPage(
+          user: user,
+          controller: controller,
+        ),
+      ),
+    ).then((result) {
+      if (result == true) {
+        controller.loadUsers(refresh: true);
+      }
+    });
+  }
+// ✅ دوال مساعدة متجاوبة مع جميع الشاشات
 
   void _showExtendDialog(BuildContext context, UsersController controller,
       Map<String, dynamic> user) {
@@ -679,49 +558,24 @@ class _UsersPageContentState extends State<_UsersPageContent> {
     }
   }
 
-  Future<void> _showUserForm(BuildContext context, UsersController controller,
-      {Map<String, dynamic>? user}) async {
-    final result = await Navigator.push<bool>(
+// presentation/pages/users_page.dart
+
+// ✅ تحديث دالة _showAddWeightPage
+  void _showAddWeightPage(BuildContext context, Map<String, dynamic> user) {
+    final controller = context.read<UsersController>(); // ✅ جلب الـ Controller
+
+    Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => UserFormPage(
+        builder: (_) => AddWeightPage(
           user: user,
-          onSave: (userData) async {
-            final success = user == null
-                ? await controller.createUser(userData)
-                : await controller.updateUser(user['id'].toString(), userData);
-
-            if (!success) {
-              throw Exception(controller.error ??
-                  (user == null ? 'فشل إنشاء المستخدم' : 'فشل تحديث المستخدم'));
-            }
-            return true;
-          },
+          controller: controller, // ✅ تمرير الـ Controller
         ),
       ),
-    );
-
-    if (result == true) {
-      await controller.loadUsers(refresh: true);
-      // ✅ تحديث أجهزة المستخدمين أيضاً
-      final deviceController = context.read<DeviceManagementController>();
-      await deviceController.loadAllData();
-
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).clearSnackBars();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(controller.successMessage ??
-                (user == null
-                    ? 'تم إنشاء المستخدم بنجاح'
-                    : 'تم تحديث المستخدم بنجاح')),
-            backgroundColor: AppColors.success,
-            behavior: SnackBarBehavior.floating,
-            duration: const Duration(seconds: 3),
-          ),
-        );
-        controller.clearMessages();
+    ).then((result) {
+      if (result == true) {
+        controller.loadUsers(refresh: true);
       }
-    }
+    });
   }
 }

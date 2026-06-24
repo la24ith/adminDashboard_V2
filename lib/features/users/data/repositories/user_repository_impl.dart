@@ -1,6 +1,7 @@
 // data/repositories/user_repository_impl.dart
 
 import 'package:admin_dashboard/core/constants/api_constants.dart';
+import 'package:admin_dashboard/features/users/domain/entities/weight_entity.dart';
 import 'package:dartz/dartz.dart';
 import 'package:dio/dio.dart';
 
@@ -49,10 +50,35 @@ class UserRepositoryImpl implements UserRepository {
         },
       );
 
-      // 📊 3. تحويل الـ Response
+      // ✅ التحقق من وجود data
+      if (response.data == null) {
+        return Left(Failure(
+          message: 'لا توجد بيانات',
+          statusCode: response.statusCode,
+        ));
+      }
+
+      final Map<String, dynamic> responseData;
+      if (response.data is Map) {
+        responseData = response.data as Map<String, dynamic>;
+      } else {
+        return Left(Failure(
+          message: 'تنسيق البيانات غير صحيح',
+          statusCode: response.statusCode,
+        ));
+      }
+
+      // ✅ التحقق من وجود مفتاح 'data' في الـ Response
+      if (!responseData.containsKey('data') || responseData['data'] == null) {
+        return Left(Failure(
+          message: 'لا توجد بيانات للمستخدمين',
+          statusCode: response.statusCode,
+        ));
+      }
+
       final paginatedResponse =
           PaginatedResponse<Map<String, dynamic>>.fromJson(
-        response.data,
+        responseData,
         (json) => json,
       );
 
@@ -98,7 +124,24 @@ class UserRepositoryImpl implements UserRepository {
         '${ApiConstants.subscriptions}/$userId',
       );
 
-      final model = UserSubscriptionEntity.fromJson(response.data);
+      if (response.data == null) {
+        return Left(Failure(
+          message: 'لا توجد بيانات للمستخدم',
+          statusCode: response.statusCode,
+        ));
+      }
+
+      final Map<String, dynamic> responseData;
+      if (response.data is Map) {
+        responseData = response.data as Map<String, dynamic>;
+      } else {
+        return Left(Failure(
+          message: 'تنسيق البيانات غير صحيح',
+          statusCode: response.statusCode,
+        ));
+      }
+
+      final model = UserSubscriptionEntity.fromJson(responseData);
       return Right(model);
     } on DioException catch (e) {
       return Left(Failure(
@@ -121,8 +164,49 @@ class UserRepositoryImpl implements UserRepository {
         data: data,
       );
 
-      final subscription =
-          SubscriptionEntity.fromJson(response.data['subscription']);
+      print('📥 Response status: ${response.statusCode}');
+      print('📥 Response data: ${response.data}');
+
+      // ✅ التحقق من وجود data
+      if (response.data == null) {
+        return Left(Failure(
+          message: 'لا توجد بيانات للاشتراك',
+          statusCode: response.statusCode,
+        ));
+      }
+
+      final Map<String, dynamic> responseData;
+      if (response.data is Map) {
+        responseData = response.data as Map<String, dynamic>;
+      } else {
+        return Left(Failure(
+          message: 'تنسيق البيانات غير صحيح',
+          statusCode: response.statusCode,
+        ));
+      }
+
+      // ✅ التحقق: البيانات قد تكون مباشرة أو داخل 'subscription'
+      Map<String, dynamic> subscriptionData;
+
+      // إذا كان الـ Response يحتوي على مفتاح 'subscription'
+      if (responseData.containsKey('subscription') &&
+          responseData['subscription'] != null) {
+        subscriptionData = responseData['subscription'] as Map<String, dynamic>;
+      } else {
+        // ✅ البيانات مباشرة (كما في الـ Logs)
+        subscriptionData = responseData;
+      }
+
+      // ✅ التحقق من وجود البيانات الأساسية للاشتراك
+      if (!subscriptionData.containsKey('id') ||
+          subscriptionData['id'] == null) {
+        return Left(Failure(
+          message: 'بيانات الاشتراك غير مكتملة',
+          statusCode: response.statusCode,
+        ));
+      }
+
+      final subscription = SubscriptionEntity.fromJson(subscriptionData);
       return Right(subscription);
     } on DioException catch (e) {
       return Left(Failure(
@@ -145,8 +229,45 @@ class UserRepositoryImpl implements UserRepository {
         data: {'days': days},
       );
 
-      final subscription =
-          SubscriptionEntity.fromJson(response.data['subscription']);
+      print('📥 Extend Response status: ${response.statusCode}');
+      print('📥 Extend Response data: ${response.data}');
+
+      if (response.data == null) {
+        return Left(Failure(
+          message: 'لا توجد بيانات للاشتراك',
+          statusCode: response.statusCode,
+        ));
+      }
+
+      final Map<String, dynamic> responseData;
+      if (response.data is Map) {
+        responseData = response.data as Map<String, dynamic>;
+      } else {
+        return Left(Failure(
+          message: 'تنسيق البيانات غير صحيح',
+          statusCode: response.statusCode,
+        ));
+      }
+
+      // ✅ التحقق: البيانات قد تكون مباشرة أو داخل 'subscription'
+      Map<String, dynamic> subscriptionData;
+
+      if (responseData.containsKey('subscription') &&
+          responseData['subscription'] != null) {
+        subscriptionData = responseData['subscription'] as Map<String, dynamic>;
+      } else {
+        subscriptionData = responseData;
+      }
+
+      if (!subscriptionData.containsKey('id') ||
+          subscriptionData['id'] == null) {
+        return Left(Failure(
+          message: 'بيانات الاشتراك غير مكتملة',
+          statusCode: response.statusCode,
+        ));
+      }
+
+      final subscription = SubscriptionEntity.fromJson(subscriptionData);
       return Right(subscription);
     } on DioException catch (e) {
       return Left(Failure(
@@ -184,7 +305,32 @@ class UserRepositoryImpl implements UserRepository {
         data: data,
       );
 
-      final user = UserEntity.fromJson(response.data['data'] ?? response.data);
+      if (response.data == null) {
+        return Left(Failure(
+          message: 'لا توجد بيانات للمستخدم',
+          statusCode: response.statusCode,
+        ));
+      }
+
+      final Map<String, dynamic> responseData;
+      if (response.data is Map) {
+        responseData = response.data as Map<String, dynamic>;
+      } else {
+        return Left(Failure(
+          message: 'تنسيق البيانات غير صحيح',
+          statusCode: response.statusCode,
+        ));
+      }
+
+      final userData = responseData['data'] ?? responseData;
+      if (userData == null) {
+        return Left(Failure(
+          message: 'بيانات المستخدم غير موجودة',
+          statusCode: response.statusCode,
+        ));
+      }
+
+      final user = UserEntity.fromJson(userData);
       return Right(user);
     } on DioException catch (e) {
       return Left(Failure(
@@ -205,7 +351,32 @@ class UserRepositoryImpl implements UserRepository {
         data: data,
       );
 
-      final user = UserEntity.fromJson(response.data['data'] ?? response.data);
+      if (response.data == null) {
+        return Left(Failure(
+          message: 'لا توجد بيانات للمستخدم',
+          statusCode: response.statusCode,
+        ));
+      }
+
+      final Map<String, dynamic> responseData;
+      if (response.data is Map) {
+        responseData = response.data as Map<String, dynamic>;
+      } else {
+        return Left(Failure(
+          message: 'تنسيق البيانات غير صحيح',
+          statusCode: response.statusCode,
+        ));
+      }
+
+      final userData = responseData['data'] ?? responseData;
+      if (userData == null) {
+        return Left(Failure(
+          message: 'بيانات المستخدم غير موجودة',
+          statusCode: response.statusCode,
+        ));
+      }
+
+      final user = UserEntity.fromJson(userData);
       return Right(user);
     } on DioException catch (e) {
       return Left(Failure(
@@ -228,7 +399,32 @@ class UserRepositoryImpl implements UserRepository {
         data: {'is_active': !currentStatus},
       );
 
-      final user = UserEntity.fromJson(response.data['data'] ?? response.data);
+      if (response.data == null) {
+        return Left(Failure(
+          message: 'لا توجد بيانات للمستخدم',
+          statusCode: response.statusCode,
+        ));
+      }
+
+      final Map<String, dynamic> responseData;
+      if (response.data is Map) {
+        responseData = response.data as Map<String, dynamic>;
+      } else {
+        return Left(Failure(
+          message: 'تنسيق البيانات غير صحيح',
+          statusCode: response.statusCode,
+        ));
+      }
+
+      final userData = responseData['data'] ?? responseData;
+      if (userData == null) {
+        return Left(Failure(
+          message: 'بيانات المستخدم غير موجودة',
+          statusCode: response.statusCode,
+        ));
+      }
+
+      final user = UserEntity.fromJson(userData);
       return Right(user);
     } on DioException catch (e) {
       return Left(Failure(
@@ -251,8 +447,42 @@ class UserRepositoryImpl implements UserRepository {
         data: {'enabled': !currentStatus},
       );
 
-      final subscription =
-          SubscriptionEntity.fromJson(response.data['subscription']);
+      if (response.data == null) {
+        return Left(Failure(
+          message: 'لا توجد بيانات للاشتراك',
+          statusCode: response.statusCode,
+        ));
+      }
+
+      final Map<String, dynamic> responseData;
+      if (response.data is Map) {
+        responseData = response.data as Map<String, dynamic>;
+      } else {
+        return Left(Failure(
+          message: 'تنسيق البيانات غير صحيح',
+          statusCode: response.statusCode,
+        ));
+      }
+
+      // ✅ التحقق: البيانات قد تكون مباشرة أو داخل 'subscription'
+      Map<String, dynamic> subscriptionData;
+
+      if (responseData.containsKey('subscription') &&
+          responseData['subscription'] != null) {
+        subscriptionData = responseData['subscription'] as Map<String, dynamic>;
+      } else {
+        subscriptionData = responseData;
+      }
+
+      if (!subscriptionData.containsKey('id') ||
+          subscriptionData['id'] == null) {
+        return Left(Failure(
+          message: 'بيانات الاشتراك غير مكتملة',
+          statusCode: response.statusCode,
+        ));
+      }
+
+      final subscription = SubscriptionEntity.fromJson(subscriptionData);
       return Right(subscription);
     } on DioException catch (e) {
       return Left(Failure(
@@ -288,6 +518,71 @@ class UserRepositoryImpl implements UserRepository {
         return 'لا يمكن الاتصال بالخادم. تأكد من اتصالك بالإنترنت';
       default:
         return e.message ?? 'حدث خطأ غير متوقع';
+    }
+  }
+
+  @override
+  Future<Either<Failure, WeightEntity>> addWeight({
+    required int userId,
+    required double weight,
+    required String recordedDate,
+    String? notes,
+  }) async {
+    try {
+      final response = await dio.post(
+        '/api/admin/users/$userId/weight-records',
+        data: {
+          'weight': weight,
+          'recorded_date': recordedDate,
+          'notes': notes ?? 'From admin',
+        },
+      );
+
+      final weightData = response.data['data'] ?? response.data;
+      final weightEntity = WeightEntity.fromJson(weightData);
+
+      // مسح الكاش بعد إضافة وزن جديد
+      if (enableCache) {
+        await localDataSource.clearCache();
+      }
+
+      return Right(weightEntity);
+    } on DioException catch (e) {
+      return Left(Failure(
+        message: _handleDioError(e),
+        statusCode: e.response?.statusCode,
+        errors: e.response?.data,
+      ));
+    } catch (e) {
+      return Left(Failure(message: e.toString()));
+    }
+  }
+
+  // ✅ 🆕 جلب تاريخ الأوزان لمستخدم
+  @override
+  Future<Either<Failure, List<WeightEntity>>> getUserWeightHistory(
+    int userId, {
+    int limit = 10,
+  }) async {
+    try {
+      final response = await dio.get(
+        '/api/admin/users/$userId/weight-records',
+        queryParameters: {
+          'limit': limit,
+        },
+      );
+
+      final List<dynamic> data = response.data['data'] ?? [];
+      final weights = data.map((item) => WeightEntity.fromJson(item)).toList();
+
+      return Right(weights);
+    } on DioException catch (e) {
+      return Left(Failure(
+        message: _handleDioError(e),
+        statusCode: e.response?.statusCode,
+      ));
+    } catch (e) {
+      return Left(Failure(message: e.toString()));
     }
   }
 }

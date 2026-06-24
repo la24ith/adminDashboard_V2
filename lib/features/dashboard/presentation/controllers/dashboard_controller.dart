@@ -1,5 +1,4 @@
 import 'package:admin_dashboard/features/dashboard/presentation/widgets/dashboard_home_content.dart';
-import 'package:admin_dashboard/features/device_management/pages/device_management_page.dart';
 import 'package:admin_dashboard/features/posts/presentation/pages/posts_management_page.dart';
 import 'package:admin_dashboard/features/user_reports/presentation/pages/user_reports_page.dart';
 import 'package:flutter/material.dart';
@@ -10,7 +9,14 @@ import '../../../ads_management/pages/ads_management_page.dart';
 import '../../../notifications_management/pages/notifications_management_page.dart';
 import '../../../users/presentation/pages/users_page.dart';
 
-enum AdminPage { dashboard, users, posts, notifications, ads, reports, devices }
+enum AdminPage {
+  dashboard,
+  users,
+  posts,
+  notifications,
+  ads,
+  reports,
+}
 
 class DashboardController extends ChangeNotifier {
   AdminPage _currentPage = AdminPage.dashboard;
@@ -18,7 +24,7 @@ class DashboardController extends ChangeNotifier {
   bool _isMobileLayout = false;
   String? _adminName;
   String? _adminEmail;
-  
+
   // Dashboard Data
   Map<String, dynamic> _dashboardData = {};
   List<Map<String, dynamic>> _weeklyActivity = [];
@@ -45,34 +51,36 @@ class DashboardController extends ChangeNotifier {
     _adminEmail = await AuthService.getAdminEmail();
     notifyListeners();
   }
-Future<void> _fetchDashboardData() async {
-  _isLoading = true;
-  _error = null;
-  notifyListeners();
 
-  try {
-    final dio = DioClient.instance;
-    final response = await dio.get(ApiConstants.adminDashboard);
+  Future<void> _fetchDashboardData() async {
+    _isLoading = true;
+    _error = null;
+    notifyListeners();
 
-    if (response.statusCode == 200) {
-      // ✅ التصحيح: البيانات داخل 'stats'
-      final stats = response.data['stats'] ?? response.data;
-      _dashboardData = stats;
-      
-      // ✅ حساب النشاط الأسبوعي من البيانات الموجودة
-      _weeklyActivity = _calculateWeeklyActivity(stats);
-      
+    try {
+      final dio = DioClient.instance;
+      final response = await dio.get(ApiConstants.adminDashboard);
+
+      if (response.statusCode == 200) {
+        // ✅ التصحيح: البيانات داخل 'stats'
+        final stats = response.data['stats'] ?? response.data;
+        _dashboardData = stats;
+
+        // ✅ حساب النشاط الأسبوعي من البيانات الموجودة
+        _weeklyActivity = _calculateWeeklyActivity(stats);
+
+        _isLoading = false;
+        notifyListeners();
+      } else {
+        throw Exception('فشل تحميل بيانات لوحة التحكم');
+      }
+    } catch (e) {
+      _error = e.toString();
       _isLoading = false;
       notifyListeners();
-    } else {
-      throw Exception('فشل تحميل بيانات لوحة التحكم');
     }
-  } catch (e) {
-    _error = e.toString();
-    _isLoading = false;
-    notifyListeners();
   }
-}
+
   Future<void> refreshDashboard() async {
     await _fetchDashboardData();
   }
@@ -110,8 +118,6 @@ Future<void> _fetchDashboardData() async {
         return 'إدارة الإعلانات';
       case AdminPage.reports:
         return 'تقارير المستخدمين';
-      case AdminPage.devices:
-        return 'إدارة الأجهزة';
     }
   }
 
@@ -129,28 +135,27 @@ Future<void> _fetchDashboardData() async {
         return const AdsManagementPage();
       case AdminPage.reports:
         return const UserReportsPage();
-      case AdminPage.devices:
-        return const DeviceManagementPage();
     }
   }
-  /// ✅ حساب النشاط الأسبوعي من البيانات الموجودة
-List<Map<String, dynamic>> _calculateWeeklyActivity(Map<String, dynamic> data) {
-  final totalUsers = (data['total_users'] ?? 0).toInt();
-  final totalPosts = (data['total_posts'] ?? 0).toInt();
-  
-  // ✅ استخدام المعدل بين المستخدمين والمنشورات
-  final baseValue = ((totalUsers + totalPosts) / 2).toInt();
-  
-  // ✅ توزيع النشاط على أيام الأسبوع بنسب مئوية مختلفة
-  final days = ['أحد', 'اثنين', 'ثلاثاء', 'أربعاء', 'خميس', 'جمعة', 'سبت'];
-  final percentages = [0.65, 0.80, 0.55, 0.90, 0.70, 0.85, 0.60];
-  
-  return List.generate(7, (index) {
-    return {
-      'day': days[index],
-      'count': (baseValue * percentages[index]).toInt(),
-    };
-  });
-}
 
+  /// ✅ حساب النشاط الأسبوعي من البيانات الموجودة
+  List<Map<String, dynamic>> _calculateWeeklyActivity(
+      Map<String, dynamic> data) {
+    final totalUsers = (data['total_users'] ?? 0).toInt();
+    final totalPosts = (data['total_posts'] ?? 0).toInt();
+
+    // ✅ استخدام المعدل بين المستخدمين والمنشورات
+    final baseValue = ((totalUsers + totalPosts) / 2).toInt();
+
+    // ✅ توزيع النشاط على أيام الأسبوع بنسب مئوية مختلفة
+    final days = ['أحد', 'اثنين', 'ثلاثاء', 'أربعاء', 'خميس', 'جمعة', 'سبت'];
+    final percentages = [0.65, 0.80, 0.55, 0.90, 0.70, 0.85, 0.60];
+
+    return List.generate(7, (index) {
+      return {
+        'day': days[index],
+        'count': (baseValue * percentages[index]).toInt(),
+      };
+    });
+  }
 }

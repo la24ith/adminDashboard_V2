@@ -2,7 +2,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
-//import 'package:record/record.dart';
+import 'package:record/record.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:path_provider/path_provider.dart';
 import '../../../../core/constants/app_colors.dart';
@@ -28,8 +28,8 @@ class AudioRecorderWidget extends StatefulWidget {
 }
 
 class _AudioRecorderWidgetState extends State<AudioRecorderWidget> {
-  // final AudioRecorder _recorder = AudioRecorder();
-  var _recorder; // Assuming you have a recorder instance from a package like 'record'
+  final AudioRecorder _recorder = AudioRecorder();
+  // Assuming you have a recorder instance from a package like 'record'
   final AudioPlayer _player = AudioPlayer();
 
   String? _currentPath;
@@ -92,14 +92,14 @@ class _AudioRecorderWidgetState extends State<AudioRecorderWidget> {
 
     try {
       // بدء التسجيل
-      /*  await _recorder.start(
+      await _recorder.start(
         const RecordConfig(
           encoder: AudioEncoder.aacLc,
           sampleRate: 44100,
           bitRate: 128000,
         ),
         path: _currentPath!,
-      );*/
+      );
 
       setState(() {
         _isRecording = true;

@@ -1,5 +1,6 @@
 // domain/repositories/user_repository.dart
 
+import 'package:admin_dashboard/features/users/domain/entities/weight_entity.dart';
 import 'package:dartz/dartz.dart';
 import '../entities/user_entity.dart';
 import '../entities/subscription_entity.dart';
@@ -86,4 +87,16 @@ abstract class UserRepository {
     int userId,
     bool currentStatus,
   );
+  Future<Either<Failure, WeightEntity>> addWeight({
+    required int userId,
+    required double weight,
+    required String recordedDate,
+    String? notes,
+  });
+
+  // ✅ 🆕 جلب تاريخ الأوزان لمستخدم
+  Future<Either<Failure, List<WeightEntity>>> getUserWeightHistory(
+    int userId, {
+    int limit = 10,
+  });
 }
