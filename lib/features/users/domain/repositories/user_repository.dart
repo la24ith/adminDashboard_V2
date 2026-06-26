@@ -99,4 +99,6 @@ abstract class UserRepository {
     int userId, {
     int limit = 10,
   });
+  Future<Either<Failure, void>> toggleScreenshot(
+      int userId, bool currentStatus);
 }

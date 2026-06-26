@@ -4,6 +4,7 @@ import 'package:admin_dashboard/features/users/domain/entities/weight_entity.dar
 import 'package:admin_dashboard/features/users/domain/usecases/add_user.dart';
 import 'package:admin_dashboard/features/users/domain/usecases/add_weight.dart';
 import 'package:admin_dashboard/features/users/domain/usecases/get_user_weight_history.dart';
+import 'package:admin_dashboard/features/users/domain/usecases/toggle_screenshot.dart';
 import 'package:flutter/material.dart';
 import 'package:dartz/dartz.dart';
 import '../../domain/entities/user_subscription_entity.dart';
@@ -30,6 +31,7 @@ class UsersController extends ChangeNotifier {
   final AddWeight addWeightUseCase;
   final GetUserWeightHistory getUserWeightHistoryUseCase;
   List<WeightEntity> get weightHistory => _weightHistory;
+  final ToggleScreenshot toggleScreenshotUseCase;
   bool get isLoadingWeightHistory => _isLoadingWeightHistory;
   // ✅ State
   List<Map<String, dynamic>> _users = [];
@@ -72,6 +74,7 @@ class UsersController extends ChangeNotifier {
     required this.toggleMultiDeviceUseCase,
     required this.addWeightUseCase,
     required this.getUserWeightHistoryUseCase,
+    required this.toggleScreenshotUseCase,
   }) {
     loadUsers();
   }
@@ -404,7 +407,29 @@ class UsersController extends ChangeNotifier {
     );
   }
 
-  // ✅ 🔄 تحديث بيانات مستخدم واحد
+// في UsersController — أضف بعد toggleMultiDevice
+  Future<bool> toggleScreenshot(String userId, bool currentStatus) async {
+    _startAction();
+
+    final result =
+        await toggleScreenshotUseCase(int.parse(userId), currentStatus);
+
+    return result.fold(
+      (failure) {
+        _error = failure.message;
+        _finishAction();
+        return false;
+      },
+      (_) {
+        _successMessage =
+            currentStatus ? 'تم منع تصوير الشاشة' : 'تم السماح بتصوير الشاشة';
+        loadUsers(refresh: true);
+        _finishAction();
+        return true;
+      },
+    );
+  }
+
   Future<void> refreshUserData(String userId) async {
     await loadUsers(refresh: true);
   }

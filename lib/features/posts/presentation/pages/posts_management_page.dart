@@ -43,12 +43,16 @@ class _PostsPageContentState extends State<_PostsPageContent>
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<PostsController>().init();
+      // ✅ نقل _showMessages من build إلى listener على الـ controller
+      context.read<PostsController>().addListener(_showMessages);
     });
     _animationController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 500),
     );
     _animationController.forward();
+    // ✅ إضافة listener للـ scroll لتحديث زر الأعلى
+    _scrollController.addListener(() => setState(() {}));
   }
 
   @override
@@ -87,45 +91,68 @@ class _PostsPageContentState extends State<_PostsPageContent>
 
   @override
   Widget build(BuildContext context) {
-    _showMessages();
-
     return Scaffold(
       backgroundColor: AppColors.background,
-      body: Column(
+      body: Stack(
         children: [
-          // Header - بدون Expanded
-          const _HeaderSection(),
-          const _StatsSection(),
-          _SearchAndFiltersSection(
-            onSearchChanged: _updateSearchQuery,
-            onFilterChanged: _updateFilterStatus,
-            currentFilter: _filterStatus,
+          // ✅ CustomScrollView واحد يشمل كل شيء = سكرول على كامل الشاشة
+          Consumer<PostsController>(
+            builder: (context, controller, _) {
+              return NotificationListener<ScrollNotification>(
+                onNotification: (ScrollNotification scrollInfo) {
+                  if (!controller.isLoadingMore &&
+                      controller.hasMore &&
+                      scrollInfo.metrics.pixels >=
+                          scrollInfo.metrics.maxScrollExtent - 200) {
+                    controller.loadMorePosts();
+                  }
+                  return false;
+                },
+                child: RefreshIndicator(
+                  onRefresh: () async {
+                    await controller.loadPosts(forceRefresh: true);
+                  },
+                  color: AppColors.accent,
+                  child: CustomScrollView(
+                    controller: _scrollController,
+                    slivers: [
+                      // ✅ الهيدر كـ Sliver
+                      const SliverToBoxAdapter(child: _HeaderSection()),
+
+                      // ✅ الإحصائيات كـ Sliver
+                      const SliverToBoxAdapter(child: _StatsSection()),
+
+                      // ✅ البحث والفلاتر كـ Sliver
+                      SliverToBoxAdapter(
+                        child: _SearchAndFiltersSection(
+                          onSearchChanged: _updateSearchQuery,
+                          onFilterChanged: _updateFilterStatus,
+                          currentFilter: _filterStatus,
+                        ),
+                      ),
+
+                      // ✅ المحتوى الرئيسي كـ Sliver
+                      if (controller.isLoading && controller.posts.isEmpty)
+                        const SliverToBoxAdapter(child: _SkeletonGrid())
+                      else
+                        _PostsGrid(
+                          controller: controller,
+                          searchQuery: _searchQuery,
+                          filterStatus: _filterStatus,
+                          onClearFilters: _clearAllFilters,
+                        ),
+                    ],
+                  ),
+                ),
+              );
+            },
           ),
-          // المحتوى الرئيسي - يأخذ المساحة المتبقية
-          Expanded(
-            child: Consumer<PostsController>(
-              builder: (context, controller, _) {
-                if (controller.isLoading && controller.posts.isEmpty) {
-                  return const _SkeletonGrid();
-                }
-                return Stack(
-                  children: [
-                    _PostsGrid(
-                      scrollController: _scrollController,
-                      controller: controller,
-                      searchQuery: _searchQuery,
-                      filterStatus: _filterStatus,
-                      onClearFilters: _clearAllFilters,
-                    ),
-                    Positioned(
-                      bottom: 16,
-                      right: 16,
-                      child: _buildScrollToTopButton(),
-                    ),
-                  ],
-                );
-              },
-            ),
+
+          // ✅ زر الرجوع للأعلى يعمل بشكل صحيح الآن
+          Positioned(
+            bottom: 16,
+            right: 16,
+            child: _buildScrollToTopButton(),
           ),
         ],
       ),
@@ -133,23 +160,28 @@ class _PostsPageContentState extends State<_PostsPageContent>
   }
 
   Widget _buildScrollToTopButton() {
+    // ✅ إصلاح: AnimatedOpacity يقرأ الـ offset الحالي من setState في الـ listener
+    final show = _scrollController.hasClients && _scrollController.offset > 300;
     return AnimatedOpacity(
-      opacity: _scrollController.hasClients && _scrollController.offset > 300
-          ? 1.0
-          : 0.0,
+      opacity: show ? 1.0 : 0.0,
       duration: const Duration(milliseconds: 300),
-      child: FloatingActionButton.small(
-        onPressed: _scrollToTop,
-        backgroundColor: AppColors.accent,
-        child: const Icon(Icons.arrow_upward, color: Colors.white),
+      child: IgnorePointer(
+        ignoring: !show,
+        child: FloatingActionButton.small(
+          onPressed: _scrollToTop,
+          backgroundColor: AppColors.accent,
+          child: const Icon(Icons.arrow_upward, color: Colors.white),
+        ),
       ),
     );
   }
 
+  // ✅ إصلاح: _showMessages الآن listener على الـ controller وليس داخل build
   void _showMessages() {
     final controller = context.read<PostsController>();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (controller.successMessage != null) {
+    if (controller.successMessage != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Row(
@@ -167,8 +199,11 @@ class _PostsPageContentState extends State<_PostsPageContent>
           ),
         );
         controller.clearMessages();
-      }
-      if (controller.error != null) {
+      });
+    }
+    if (controller.error != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Row(
@@ -186,8 +221,8 @@ class _PostsPageContentState extends State<_PostsPageContent>
           ),
         );
         controller.clearMessages();
-      }
-    });
+      });
+    }
   }
 }
 
@@ -724,17 +759,15 @@ class _SearchAndFiltersSection extends StatelessWidget {
   }
 }
 
-// ==================== Posts Grid with Pagination ====================
+// ==================== Posts Grid (Sliver-based) ====================
 
 class _PostsGrid extends StatelessWidget {
-  final ScrollController scrollController;
   final PostsController controller;
   final String searchQuery;
   final String filterStatus;
   final VoidCallback onClearFilters;
 
   const _PostsGrid({
-    required this.scrollController,
     required this.controller,
     required this.searchQuery,
     required this.filterStatus,
@@ -757,80 +790,55 @@ class _PostsGrid extends StatelessWidget {
     final filteredPosts = _getFilteredPosts();
     final crossAxisCount = ResponsiveHelper.getGridCrossAxisCount(context);
 
-    // عرض حالة التحميل الأولي
-    if (controller.isLoading && filteredPosts.isEmpty) {
-      return const _SkeletonGrid();
-    }
-
-    // عرض حالة عدم وجود بيانات
+    // حالة عدم وجود بيانات
     if (filteredPosts.isEmpty) {
-      return _buildEmptyState(context);
+      return SliverToBoxAdapter(child: _buildEmptyState(context));
     }
 
-    // عرض الشبكة مع دعم السحب للتحديث والتحميل التدريجي
-    return RefreshIndicator(
-      onRefresh: () async {
-        await controller.loadPosts(forceRefresh: true);
-      },
-      color: AppColors.accent,
-      child: NotificationListener<ScrollNotification>(
-        onNotification: (ScrollNotification scrollInfo) {
-          // التحميل التلقائي عند الوصول للنهاية
-          if (!controller.isLoadingMore &&
-              controller.hasMore &&
-              scrollInfo.metrics.pixels >=
-                  scrollInfo.metrics.maxScrollExtent - 200) {
-            controller.loadMorePosts();
-          }
-          return false;
-        },
-        child: CustomScrollView(
-          controller: scrollController,
-          slivers: [
-            SliverPadding(
-              padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
-              sliver: SliverGrid(
-                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: crossAxisCount,
-                  crossAxisSpacing: 20,
-                  mainAxisSpacing: 20,
-                  childAspectRatio:
-                      ResponsiveHelper.getCardAspectRatio(context),
-                ),
-                delegate: SliverChildBuilderDelegate(
-                  (context, index) {
-                    if (index < filteredPosts.length) {
-                      return _PostCardWrapper(
-                        post: filteredPosts[index],
-                        controller: controller,
-                      );
-                    }
-                    return null;
-                  },
-                  childCount: filteredPosts.length,
-                ),
-              ),
+    // ✅ Sliver Grid مباشرة بدون Expanded أو RefreshIndicator هنا
+    return SliverMainAxisGroup(
+      slivers: [
+        SliverPadding(
+          padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
+          sliver: SliverGrid(
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: crossAxisCount,
+              crossAxisSpacing: 20,
+              mainAxisSpacing: 20,
+              childAspectRatio: ResponsiveHelper.getCardAspectRatio(context),
             ),
-            // مؤشر تحميل المزيد
-            if (controller.hasMore)
-              SliverToBoxAdapter(
-                child: Container(
-                  padding: const EdgeInsets.symmetric(vertical: 20),
-                  child: const Center(
-                    child: SizedBox(
-                      width: 30,
-                      height: 30,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2.5,
-                        color: AppColors.accent,
-                      ),
-                    ),
+            delegate: SliverChildBuilderDelegate(
+              (context, index) {
+                if (index < filteredPosts.length) {
+                  return _PostCardWrapper(
+                    post: filteredPosts[index],
+                    controller: controller,
+                  );
+                }
+                return null;
+              },
+              childCount: filteredPosts.length,
+            ),
+          ),
+        ),
+        // مؤشر تحميل المزيد
+        if (controller.hasMore)
+          SliverToBoxAdapter(
+            child: Container(
+              padding: const EdgeInsets.symmetric(vertical: 20),
+              child: const Center(
+                child: SizedBox(
+                  width: 30,
+                  height: 30,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2.5,
+                    color: AppColors.accent,
                   ),
                 ),
               ),
-          ],
-        ),
-      ),
+            ),
+          ),
+      ],
     );
   }
 
@@ -838,11 +846,12 @@ class _PostsGrid extends StatelessWidget {
     final hasFilters = searchQuery.isNotEmpty || filterStatus != 'all';
 
     return Center(
-      child: SingleChildScrollView(
+      child: Padding(
         padding: const EdgeInsets.all(24),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
+            const SizedBox(height: 60),
             AnimatedContainer(
               duration: const Duration(milliseconds: 300),
               width: hasFilters ? 100 : 120,
@@ -978,7 +987,7 @@ class _PostCardWrapper extends StatelessWidget {
   Future<void> _showRescheduleDialog(BuildContext context, Post post) async {
     DateTime newDate =
         post.scheduledFor ?? DateTime.now().add(const Duration(days: 1));
-    final result = await showDialog<bool>(
+    await showDialog<bool>(
       context: context,
       builder: (context) => _RescheduleDialog(
         initialDate: newDate,
@@ -1008,7 +1017,6 @@ class _PostCardWrapper extends StatelessWidget {
       builder: (_) => ConfirmDialog(
         title: 'تأكيد الحذف',
         message: 'هل أنت متأكد من حذف هذا المنشور؟',
-        onConfirm: () => Navigator.pop(context, true),
       ),
     );
 
@@ -1255,17 +1263,23 @@ class _SkeletonGrid extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final crossAxisCount = ResponsiveHelper.getGridCrossAxisCount(context);
+    // ✅ استخدام ارتفاع ثابت بدلاً من GridView غير محدود داخل SliverToBoxAdapter
+    final double screenHeight = MediaQuery.of(context).size.height;
 
-    return GridView.builder(
-      padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
-      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: crossAxisCount,
-        crossAxisSpacing: 20,
-        mainAxisSpacing: 20,
-        childAspectRatio: ResponsiveHelper.getCardAspectRatio(context),
+    return SizedBox(
+      height: screenHeight * 0.6,
+      child: GridView.builder(
+        physics: const NeverScrollableScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
+        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: crossAxisCount,
+          crossAxisSpacing: 20,
+          mainAxisSpacing: 20,
+          childAspectRatio: ResponsiveHelper.getCardAspectRatio(context),
+        ),
+        itemCount: 6,
+        itemBuilder: (context, index) => const PostCardSkeleton(),
       ),
-      itemCount: 6,
-      itemBuilder: (context, index) => const PostCardSkeleton(),
     );
   }
 }

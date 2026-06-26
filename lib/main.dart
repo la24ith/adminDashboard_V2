@@ -105,22 +105,35 @@ class _AuthCheckWrapperState extends State<AuthCheckWrapper> {
   }
 
   Future<void> _checkAuth() async {
-    final isLoggedIn = await AuthService.isLoggedIn();
-
-    if (!mounted) return;
-
-    if (isLoggedIn) {
-      Navigator.pushReplacementNamed(context, AppRoutes.adminDashboard);
-    } else {
+    try {
+      final isLoggedIn =
+          await AuthService.isLoggedIn().timeout(const Duration(seconds: 5));
+      if (!mounted) return;
+      if (isLoggedIn) {
+        Navigator.pushReplacementNamed(context, AppRoutes.adminDashboard);
+      } else {
+        Navigator.pushReplacementNamed(context, AppRoutes.adminLogin);
+      }
+    } catch (e) {
+      if (!mounted) return;
       Navigator.pushReplacementNamed(context, AppRoutes.adminLogin);
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return const Scaffold(
-      backgroundColor: Colors.transparent,
-      body: SizedBox.shrink(),
+    return Scaffold(
+      backgroundColor: AppColors.primary,
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Image.asset('assets/images/logo.png', width: 120),
+            const SizedBox(height: 24),
+            const CircularProgressIndicator(color: Colors.white),
+          ],
+        ),
+      ),
     );
   }
 }

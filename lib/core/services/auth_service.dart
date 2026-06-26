@@ -3,12 +3,19 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:admin_dashboard/features/auth/domain/entities/user.dart';
 
 class AuthService {
-  static const _storage = FlutterSecureStorage();
+  static const _storage = FlutterSecureStorage(
+    aOptions: AndroidOptions(
+      encryptedSharedPreferences: true,
+    ),
+    iOptions: IOSOptions(
+      accessibility: KeychainAccessibility.first_unlock,
+    ),
+  );
   static const String _tokenKey = 'admin_token';
   static const String _userKey = 'admin_user';
 
   // ==================== Token Management ====================
-  
+
   static Future<void> saveToken(String token) async {
     if (token.isEmpty) {
       print('⚠️ Warning: Attempted to save empty token');
@@ -27,7 +34,7 @@ class AuthService {
   }
 
   // ==================== User Management (موحد) ====================
-  
+
   static Future<void> saveUser(User user) async {
     final userJson = jsonEncode({
       'id': user.id,
@@ -43,7 +50,7 @@ class AuthService {
     try {
       final userJson = await _storage.read(key: _userKey);
       if (userJson == null) return null;
-      
+
       final Map<String, dynamic> data = jsonDecode(userJson);
       return User(
         id: data['id'],
@@ -74,11 +81,17 @@ class AuthService {
   }
 
   // ==================== Session Management ====================
-  
+
   static Future<bool> isLoggedIn() async {
-    final hasToken = await hasValidToken();
-    final hasUser = await getUser() != null;
-    return hasToken && hasUser;
+    try {
+      final token = await getToken()
+          .timeout(const Duration(seconds: 3)); // ✅ timeout للريليز
+      final user = await getUser().timeout(const Duration(seconds: 3));
+      return token != null && token.isNotEmpty && user != null;
+    } catch (e) {
+      print('❌ isLoggedIn error: $e');
+      return false;
+    }
   }
 
   static Future<void> clearSession() async {
@@ -87,7 +100,7 @@ class AuthService {
   }
 
   // ==================== Admin Data (للتوافق مع الكود القديم) ====================
-  
+
   static Future<void> saveUserData({
     required String id,
     required String name,

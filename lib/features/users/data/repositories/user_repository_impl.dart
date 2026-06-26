@@ -585,4 +585,36 @@ class UserRepositoryImpl implements UserRepository {
       return Left(Failure(message: e.toString()));
     }
   }
+  // lib/features/users/data/repositories/user_repository_impl.dart
+// أضف هذه الدالة مع باقي الدوال الموجودة
+
+  @override
+  @override
+  Future<Either<Failure, void>> toggleScreenshot(
+    int userId,
+    bool currentStatus,
+  ) async {
+    try {
+      final response = await dio.patch(
+        '/api/admin/users/$userId/screenshot-permission',
+        data: {'can_screenshot': !currentStatus},
+      );
+
+      if (response.statusCode != 200) {
+        return Left(Failure(
+          message: 'فشل تحديث صلاحية تصوير الشاشة',
+          statusCode: response.statusCode,
+        ));
+      }
+
+      return const Right(null);
+    } on DioException catch (e) {
+      return Left(Failure(
+        message: _handleDioError(e),
+        statusCode: e.response?.statusCode,
+      ));
+    } catch (e) {
+      return Left(Failure(message: e.toString()));
+    }
+  }
 }

@@ -218,24 +218,12 @@ class _AdminLoginPageState extends State<AdminLoginPage> {
                               color: AppColors.surfaceVariant,
                               borderRadius: BorderRadius.circular(12),
                             ),
-                            child: const Column(
-                              children: [
-                                Text(
-                                  'بيانات تجريبية:',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                                SizedBox(height: 4),
-                                Text(
-                                  'admin@health.local / AdminStrong12345!',
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    color: AppColors.textTertiary,
-                                  ),
-                                ),
-                              ],
+                            child: Text(
+                              'جميع الحقوق محفوظة  OCTO TECH ',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: AppColors.textTertiary,
+                              ),
                             ),
                           ),
                         ],

@@ -9,6 +9,7 @@ import 'package:admin_dashboard/features/users/domain/usecases/extend_subscripti
 import 'package:admin_dashboard/features/users/domain/usecases/get_subscriptions.dart';
 import 'package:admin_dashboard/features/users/domain/usecases/get_user_weight_history.dart';
 import 'package:admin_dashboard/features/users/domain/usecases/toggle_multi_device.dart';
+import 'package:admin_dashboard/features/users/domain/usecases/toggle_screenshot.dart';
 import 'package:admin_dashboard/features/users/domain/usecases/toggle_user_status.dart';
 import 'package:admin_dashboard/features/users/domain/usecases/update_subscription.dart';
 import 'package:admin_dashboard/features/users/domain/usecases/update_user.dart';
@@ -52,6 +53,7 @@ Future<void> init() async {
   sl.registerLazySingleton(() => ToggleMultiDevice(sl()));
   sl.registerLazySingleton(() => AddWeight(sl())); // ✅ تسجيل AddWeight
   sl.registerLazySingleton(() => GetUserWeightHistory(sl()));
+  sl.registerLazySingleton(() => ToggleScreenshot(sl()));
 
   // ✅ Controllers
   sl.registerFactory(
@@ -66,6 +68,7 @@ Future<void> init() async {
       toggleMultiDeviceUseCase: sl(),
       addWeightUseCase: sl(), // ✅ إضافة
       getUserWeightHistoryUseCase: sl(),
+      toggleScreenshotUseCase: sl(),
     ),
   );
 }

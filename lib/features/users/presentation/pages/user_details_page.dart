@@ -176,7 +176,9 @@ class _UserDetailsPageState extends State<UserDetailsPage>
               _buildSubscriptionCard(user),
 
               const SizedBox(height: 16),
+              _buildPermissionsCard(user),
 
+              const SizedBox(height: 16),
               // ✅ 4. بيانات الأجهزة (مع device_id وأزرار تحكم)
               _buildDevicesCard(),
 
@@ -1493,6 +1495,190 @@ class _UserDetailsPageState extends State<UserDetailsPage>
         return 'مريض';
       default:
         return role ?? 'غير محدد';
+    }
+  }
+
+  Widget _buildPermissionsCard(Map<String, dynamic> user) {
+    final isActive = user['is_active'] ?? false;
+    final isMultiDevice = user['is_multi_device'] ?? false;
+    final canScreenshot = user['can_screenshot'] ?? false;
+
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 10,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // ── العنوان ──
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: AppColors.accent.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(Icons.security, color: AppColors.accent),
+              ),
+              const SizedBox(width: 12),
+              const Text(
+                'الصلاحيات والتحكم',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+            ],
+          ),
+          const Divider(height: 24),
+
+          // ── تفعيل الحساب ──
+          _buildToggleRow(
+            icon: Icons.person_outline,
+            iconColor: isActive ? AppColors.success : AppColors.error,
+            label: 'تفعيل الحساب',
+            subtitle: isActive ? 'الحساب نشط' : 'الحساب موقوف',
+            value: isActive,
+            onChanged: (val) => _toggleStatus(user),
+          ),
+
+          const Divider(height: 16),
+
+          // ── الأجهزة المتعددة ──
+          _buildToggleRow(
+            icon: Icons.devices_outlined,
+            iconColor: isMultiDevice ? AppColors.info : AppColors.textSecondary,
+            label: 'الأجهزة المتعددة',
+            subtitle: isMultiDevice ? 'مسموح بأجهزة متعددة' : 'جهاز واحد فقط',
+            value: isMultiDevice,
+            onChanged: (val) => _toggleMultiDevice(user),
+          ),
+
+          const Divider(height: 16),
+
+          // ── تصوير الشاشة ──
+          _buildToggleRow(
+            icon: Icons.screenshot_outlined,
+            iconColor:
+                canScreenshot ? AppColors.warning : AppColors.textSecondary,
+            label: 'تصوير الشاشة',
+            subtitle: canScreenshot
+                ? 'مسموح للمستخدم بتصوير الشاشة'
+                : 'ممنوع تصوير الشاشة',
+            value: canScreenshot,
+            onChanged: (val) => _toggleScreenshot(user),
+          ),
+        ],
+      ),
+    );
+  }
+
+// ── Widget مساعد للـ Toggle ──
+  Widget _buildToggleRow({
+    required IconData icon,
+    required Color iconColor,
+    required String label,
+    required String subtitle,
+    required bool value,
+    required ValueChanged<bool> onChanged,
+  }) {
+    return Row(
+      children: [
+        Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: iconColor.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Icon(icon, color: iconColor, size: 20),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              Text(
+                subtitle,
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: AppColors.textSecondary,
+                ),
+              ),
+            ],
+          ),
+        ),
+        Switch(
+          value: value,
+          onChanged: onChanged,
+          activeColor: AppColors.accent,
+        ),
+      ],
+    );
+  }
+
+// ── دوال التحكم ──
+  Future<void> _toggleStatus(Map<String, dynamic> user) async {
+    final controller = _getUsersController();
+    final success = await controller.toggleUserStatus(
+      user['id'].toString(),
+      user['is_active'] ?? false,
+    );
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(success
+            ? controller.successMessage ?? 'تم التحديث'
+            : controller.error ?? 'فشل التحديث'),
+        backgroundColor: success ? AppColors.success : AppColors.error,
+      ));
+      if (success) await _refreshAllData();
+    }
+  }
+
+  Future<void> _toggleMultiDevice(Map<String, dynamic> user) async {
+    final controller = _getUsersController();
+    final success = await controller.toggleMultiDevice(
+      user['id'].toString(),
+      user['is_multi_device'] ?? false,
+    );
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(success
+            ? controller.successMessage ?? 'تم التحديث'
+            : controller.error ?? 'فشل التحديث'),
+        backgroundColor: success ? AppColors.success : AppColors.error,
+      ));
+      if (success) await _refreshAllData();
+    }
+  }
+
+  Future<void> _toggleScreenshot(Map<String, dynamic> user) async {
+    final controller = _getUsersController();
+    final success = await controller.toggleScreenshot(
+      user['id'].toString(),
+      user['can_screenshot'] ?? false,
+    );
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(success
+            ? controller.successMessage ?? 'تم التحديث'
+            : controller.error ?? 'فشل التحديث'),
+        backgroundColor: success ? AppColors.success : AppColors.error,
+      ));
+      if (success) await _refreshAllData();
     }
   }
 }

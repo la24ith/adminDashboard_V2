@@ -331,7 +331,8 @@ class PostsController extends ChangeNotifier {
         _repository.deletePostFromCache(postId);
         _posts.removeWhere((post) => post.id == postId);
         _successMessage = 'تم حذف المنشور';
-        _safeNotify();
+        _isActionInProgress = false; // ✅ أوقف الـ action قبل الـ notify
+        _safeNotify(); // ✅ notify واحدة فقط
         return true;
       }
       throw Exception('فشل الحذف');
@@ -340,8 +341,10 @@ class PostsController extends ChangeNotifier {
       _error = _getErrorMessage(e);
       return false;
     } finally {
-      if (!_isDisposed) {
-        _setActionState(false);
+      // ✅ فقط إذا لم ينجح (لم يتم إيقافه في try)
+      if (!_isDisposed && _isActionInProgress) {
+        _isActionInProgress = false;
+        _safeNotify();
       }
     }
   }
@@ -532,7 +535,6 @@ class PostsController extends ChangeNotifier {
         options: Options(
           headers: {
             'Accept': 'application/json',
-            'ngrok-skip-browser-warning': 'true',
           },
           sendTimeout: const Duration(seconds: 120),
           receiveTimeout: const Duration(seconds: 120),
