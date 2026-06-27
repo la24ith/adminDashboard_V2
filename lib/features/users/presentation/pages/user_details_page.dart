@@ -30,6 +30,11 @@ class _UserDetailsPageState extends State<UserDetailsPage>
   String? _deviceError;
   String? _processingDeviceId;
 
+  // ✅ local state للقيم القابلة للتغيير (بدلاً من الاعتماد على widget.user الثابتة)
+  late bool _isActive;
+  late bool _isMultiDevice;
+  late bool _canScreenshot;
+
   // ✅ متغيرات للـ Controllers
   UsersController? _usersController;
   DeviceManagementController? _deviceController;
@@ -45,6 +50,11 @@ class _UserDetailsPageState extends State<UserDetailsPage>
       CurvedAnimation(parent: _animationController, curve: Curves.easeInOut),
     );
     _animationController.forward();
+
+    // ✅ تهيئة القيم المحلية من widget.user
+    _isActive = widget.user['is_active'] ?? false;
+    _isMultiDevice = widget.user['is_multi_device'] ?? false;
+    _canScreenshot = widget.user['can_screenshot'] ?? false;
 
     // ✅ تأخير تحميل البيانات حتى يتم بناء الـ Widget بالكامل
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1499,9 +1509,10 @@ class _UserDetailsPageState extends State<UserDetailsPage>
   }
 
   Widget _buildPermissionsCard(Map<String, dynamic> user) {
-    final isActive = user['is_active'] ?? false;
-    final isMultiDevice = user['is_multi_device'] ?? false;
-    final canScreenshot = user['can_screenshot'] ?? false;
+    // ✅ نقرأ من الـ local state وليس من user Map الثابتة
+    final isActive = _isActive;
+    final isMultiDevice = _isMultiDevice;
+    final canScreenshot = _canScreenshot;
 
     return Container(
       padding: const EdgeInsets.all(20),
@@ -1540,28 +1551,6 @@ class _UserDetailsPageState extends State<UserDetailsPage>
           const Divider(height: 24),
 
           // ── تفعيل الحساب ──
-          _buildToggleRow(
-            icon: Icons.person_outline,
-            iconColor: isActive ? AppColors.success : AppColors.error,
-            label: 'تفعيل الحساب',
-            subtitle: isActive ? 'الحساب نشط' : 'الحساب موقوف',
-            value: isActive,
-            onChanged: (val) => _toggleStatus(user),
-          ),
-
-          const Divider(height: 16),
-
-          // ── الأجهزة المتعددة ──
-          _buildToggleRow(
-            icon: Icons.devices_outlined,
-            iconColor: isMultiDevice ? AppColors.info : AppColors.textSecondary,
-            label: 'الأجهزة المتعددة',
-            subtitle: isMultiDevice ? 'مسموح بأجهزة متعددة' : 'جهاز واحد فقط',
-            value: isMultiDevice,
-            onChanged: (val) => _toggleMultiDevice(user),
-          ),
-
-          const Divider(height: 16),
 
           // ── تصوير الشاشة ──
           _buildToggleRow(
@@ -1644,7 +1633,11 @@ class _UserDetailsPageState extends State<UserDetailsPage>
             : controller.error ?? 'فشل التحديث'),
         backgroundColor: success ? AppColors.success : AppColors.error,
       ));
-      if (success) await _refreshAllData();
+      if (success) {
+        // ✅ تحديث الـ local state فوراً بدون انتظار _refreshAllData
+        setState(() => _isActive = !_isActive);
+        await _refreshAllData();
+      }
     }
   }
 
@@ -1661,14 +1654,18 @@ class _UserDetailsPageState extends State<UserDetailsPage>
             : controller.error ?? 'فشل التحديث'),
         backgroundColor: success ? AppColors.success : AppColors.error,
       ));
-      if (success) await _refreshAllData();
+      if (success) {
+        // ✅ تحديث الـ local state فوراً
+        setState(() => _isMultiDevice = !_isMultiDevice);
+        await _refreshAllData();
+      }
     }
   }
 
   Future<void> _toggleScreenshot(Map<String, dynamic> user) async {
     final controller = _getUsersController();
     final success = await controller.toggleScreenshot(
-      user['id'].toString(),
+      user['id'],
       user['can_screenshot'] ?? false,
     );
     if (context.mounted) {
@@ -1678,7 +1675,11 @@ class _UserDetailsPageState extends State<UserDetailsPage>
             : controller.error ?? 'فشل التحديث'),
         backgroundColor: success ? AppColors.success : AppColors.error,
       ));
-      if (success) await _refreshAllData();
+      if (success) {
+        // ✅ تحديث الـ local state فوراً
+        setState(() => _canScreenshot = !_canScreenshot);
+        await _refreshAllData();
+      }
     }
   }
 }

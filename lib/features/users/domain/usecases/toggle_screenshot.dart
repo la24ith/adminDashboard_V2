@@ -1,5 +1,3 @@
-// lib/features/users/domain/usecases/toggle_screenshot.dart
-
 import 'package:dartz/dartz.dart';
 import '../repositories/user_repository.dart';
 

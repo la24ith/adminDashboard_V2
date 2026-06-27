@@ -6,7 +6,7 @@ class ApiConstants {
   static const String logout = '/api/auth/logout';
   static const String user = '/api/auth/user';
 
-  // ✅ مسارات الأدمن الصحيحة
+  // ✅ مسارات الأدمن الصحيحةs
   static const String adminDashboard = '/api/admin/dashboard';
   static const String adminUsers = '/api/admin/users';
   static const String adminPosts = '/api/admin/posts';

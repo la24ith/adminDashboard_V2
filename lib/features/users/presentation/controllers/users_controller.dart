@@ -408,11 +408,10 @@ class UsersController extends ChangeNotifier {
   }
 
 // في UsersController — أضف بعد toggleMultiDevice
-  Future<bool> toggleScreenshot(String userId, bool currentStatus) async {
+  Future<bool> toggleScreenshot(int userId, bool currentStatus) async {
     _startAction();
 
-    final result =
-        await toggleScreenshotUseCase(int.parse(userId), currentStatus);
+    final result = await toggleScreenshotUseCase(userId, currentStatus);
 
     return result.fold(
       (failure) {

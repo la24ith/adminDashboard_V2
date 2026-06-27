@@ -123,12 +123,12 @@ class _AuthCheckWrapperState extends State<AuthCheckWrapper> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.primary,
+      backgroundColor: AppColors.background,
       body: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Image.asset('assets/images/logo.png', width: 120),
+            // Image.asset('assets/images/logo.png', width: 120),
             const SizedBox(height: 24),
             const CircularProgressIndicator(color: Colors.white),
           ],
