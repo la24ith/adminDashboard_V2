@@ -31,15 +31,7 @@ class _UserFormPageState extends State<UserFormPage>
   late TextEditingController _heightController;
   bool _healthValid = false;
 
-  // صفحة 3: الاشتراك
-  late TextEditingController _planTypeController;
-  late TextEditingController _priceController;
-  late TextEditingController _maxDevicesController;
-  late DateTime _startDate;
-  late DateTime _endDate;
-  late bool _allowMultiDevice;
-  bool _subscriptionValid = false;
-
+  static const int _totalSteps = 1; // 0: حساب, 1: صحة
   int _currentStep = 0;
   bool _isSaving = false;
   String? _errorMessage;
@@ -66,28 +58,13 @@ class _UserFormPageState extends State<UserFormPage>
     _heightController =
         TextEditingController(text: widget.user?['height']?.toString() ?? '');
 
-    _planTypeController =
-        TextEditingController(text: widget.user?['plan_type'] ?? 'monthly');
-    _priceController = TextEditingController(
-        text: widget.user?['price']?.toString() ?? '199.99');
-    _maxDevicesController = TextEditingController(
-        text: widget.user?['max_devices']?.toString() ?? '1');
-
-    _startDate = widget.user?['subscription_start'] != null
-        ? DateTime.parse(widget.user!['subscription_start'])
-        : DateTime.now();
-    _endDate = widget.user?['subscription_end'] != null
-        ? DateTime.parse(widget.user!['subscription_end'])
-        : DateTime.now().add(const Duration(days: 30));
-    _allowMultiDevice = widget.user?['multi_device_enabled'] ?? false;
     _role = widget.user?['role'] ?? 'patient';
 
     _validateAccount();
     _validateHealth();
-    _validateSubscription();
 
     _animationController = AnimationController(
-      duration: const Duration(milliseconds: 500),
+      duration: const Duration(milliseconds: 400),
       vsync: this,
     );
     _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
@@ -107,15 +84,8 @@ class _UserFormPageState extends State<UserFormPage>
   }
 
   void _validateHealth() {
-    // ✅ تحقق فعلي من البيانات الصحية (اختيارية)
     setState(() {
       _healthValid = true; // جميع القياسات اختيارية
-    });
-  }
-
-  void _validateSubscription() {
-    setState(() {
-      _subscriptionValid = _endDate.isAfter(_startDate);
     });
   }
 
@@ -130,9 +100,6 @@ class _UserFormPageState extends State<UserFormPage>
     _targetWeightController.dispose();
     _currentWeightController.dispose();
     _heightController.dispose();
-    _planTypeController.dispose();
-    _priceController.dispose();
-    _maxDevicesController.dispose();
     _animationController.dispose();
     super.dispose();
   }
@@ -141,6 +108,7 @@ class _UserFormPageState extends State<UserFormPage>
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.background,
+      resizeToAvoidBottomInset: true,
       appBar: AppBar(
         title: Text(
           widget.user == null ? 'إضافة مستخدم جديد' : 'تعديل المستخدم',
@@ -181,12 +149,12 @@ class _UserFormPageState extends State<UserFormPage>
 
   Widget _buildProgressIndicator() {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       child: Row(
         children: [
-          _buildStepIndicator(0, 'معلومات الحساب', Icons.person_outline),
+          _buildStepIndicator(0, 'الحساب', Icons.person_outline),
           Expanded(child: _buildConnector(0)),
-          _buildStepIndicator(1, 'القياسات الصحية', Icons.fitness_center),
+          _buildStepIndicator(1, 'الصحة', Icons.fitness_center),
         ],
       ),
     );
@@ -198,7 +166,7 @@ class _UserFormPageState extends State<UserFormPage>
         (step == 0 && _accountValid) || (step == 1 && _healthValid);
 
     return GestureDetector(
-      onTap: isCompleted
+      onTap: isCompleted && step < _currentStep
           ? () {
               setState(() {
                 _currentStep = step;
@@ -210,8 +178,8 @@ class _UserFormPageState extends State<UserFormPage>
       child: Column(
         children: [
           Container(
-            width: 48,
-            height: 48,
+            width: 44,
+            height: 44,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               gradient: isCompleted
@@ -230,7 +198,7 @@ class _UserFormPageState extends State<UserFormPage>
               ),
             ),
             child: isCompleted && !isActive
-                ? const Icon(Icons.check, color: Colors.white, size: 24)
+                ? const Icon(Icons.check, color: Colors.white, size: 22)
                 : Icon(
                     icon,
                     color: isActive
@@ -238,14 +206,14 @@ class _UserFormPageState extends State<UserFormPage>
                         : (isCompleted
                             ? AppColors.success
                             : AppColors.textSecondary),
-                    size: 24,
+                    size: 22,
                   ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 4),
           Text(
             title,
             style: TextStyle(
-              fontSize: 12,
+              fontSize: 11,
               fontWeight: isActive ? FontWeight.w600 : FontWeight.normal,
               color: isActive
                   ? AppColors.accent
@@ -258,12 +226,11 @@ class _UserFormPageState extends State<UserFormPage>
   }
 
   Widget _buildConnector(int step) {
-    final isCompleted =
-        (step == 0 && _accountValid) || (step == 1 && _healthValid);
+    final isCompleted = (step == 0 && _accountValid);
 
     return Container(
       height: 2,
-      margin: const EdgeInsets.symmetric(horizontal: 4),
+      margin: const EdgeInsets.only(bottom: 16, left: 4, right: 4),
       decoration: BoxDecoration(
         gradient: isCompleted
             ? LinearGradient(
@@ -278,40 +245,27 @@ class _UserFormPageState extends State<UserFormPage>
   Widget _buildErrorMessage() {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: AppColors.errorLight,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: AppColors.error.withOpacity(0.3)),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
         children: [
-          Row(
-            children: [
-              const Icon(Icons.error_outline, color: AppColors.error),
-              const SizedBox(width: 12),
-              const Text(
-                'خطأ',
-                style: TextStyle(
-                  color: AppColors.error,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 14,
-                ),
-              ),
-              const Spacer(),
-              IconButton(
-                icon: const Icon(Icons.close, size: 16, color: AppColors.error),
-                onPressed: () => setState(() => _errorMessage = null),
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(),
-              ),
-            ],
+          const Icon(Icons.error_outline, color: AppColors.error, size: 20),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              _errorMessage!,
+              style: const TextStyle(color: AppColors.error, fontSize: 13),
+            ),
           ),
-          const SizedBox(height: 8),
-          Text(
-            _errorMessage!,
-            style: const TextStyle(color: AppColors.error, fontSize: 13),
+          IconButton(
+            icon: const Icon(Icons.close, size: 16, color: AppColors.error),
+            onPressed: () => setState(() => _errorMessage = null),
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(),
           ),
         ],
       ),
@@ -359,7 +313,6 @@ class _UserFormPageState extends State<UserFormPage>
             value: _role,
             items: const [
               DropdownMenuItem(value: 'admin', child: Text('مدير')),
-              DropdownMenuItem(value: 'supervisor', child: Text('مشرف')),
               DropdownMenuItem(value: 'patient', child: Text('مريض')),
             ],
             onChanged: (v) => setState(() => _role = v!),
@@ -390,6 +343,7 @@ class _UserFormPageState extends State<UserFormPage>
               onChanged: (v) => _validateAccount(),
             ),
           ],
+          const SizedBox(height: 16),
         ],
       ),
     );
@@ -435,6 +389,7 @@ class _UserFormPageState extends State<UserFormPage>
             keyboardType: TextInputType.number,
             suffixText: 'سم',
           ),
+          const SizedBox(height: 16),
         ],
       ),
     );
@@ -568,115 +523,95 @@ class _UserFormPageState extends State<UserFormPage>
     );
   }
 
-  Widget _buildDateField({
-    required String label,
-    required IconData icon,
-    required DateTime date,
-    required VoidCallback onTap,
-  }) {
-    return GestureDetector(
-      onTap: onTap,
+  Widget _buildNavigationButtons() {
+    return SafeArea(
+      top: false,
       child: Container(
+        padding: EdgeInsets.fromLTRB(
+          16,
+          12,
+          16,
+          MediaQuery.of(context).viewInsets.bottom > 0 ? 8 : 12,
+        ),
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.04),
-              blurRadius: 8,
-              offset: const Offset(0, 2),
+              color: Colors.black.withOpacity(0.08),
+              blurRadius: 16,
+              offset: const Offset(0, -4),
             ),
           ],
         ),
-        child: InputDecorator(
-          decoration: InputDecoration(
-            labelText: label,
-            prefixIcon: Icon(icon, color: AppColors.accent),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(20),
-              borderSide: BorderSide.none,
-            ),
-            filled: true,
-            fillColor: Colors.white,
-            contentPadding:
-                const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-          ),
-          child: Text('${date.day}/${date.month}/${date.year}',
-              style: const TextStyle(fontSize: 16)),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildNavigationButtons() {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.08),
-            blurRadius: 16,
-            offset: const Offset(0, -4),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          if (_currentStep > 0)
+        child: Row(
+          children: [
+            if (_currentStep > 0) ...[
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: () {
+                    setState(() {
+                      _currentStep--;
+                      _animationController.reset();
+                      _animationController.forward();
+                    });
+                  },
+                  style: OutlinedButton.styleFrom(
+                    minimumSize: const Size(0, 48),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16)),
+                  ),
+                  child: const Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.arrow_back, size: 18),
+                      SizedBox(width: 6),
+                      Text('السابق'),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+            ],
             Expanded(
-              child: OutlinedButton(
-                onPressed: () {
-                  setState(() {
-                    _currentStep--;
-                    _animationController.reset();
-                    _animationController.forward();
-                  });
-                },
-                style: OutlinedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 14),
+              flex: _currentStep > 0 ? 1 : 1,
+              child: ElevatedButton(
+                onPressed: _isSaving ? null : _nextOrSave,
+                style: ElevatedButton.styleFrom(
+                  minimumSize: const Size(0, 48),
+                  backgroundColor: AppColors.accent,
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(16)),
                 ),
-                child: const Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.arrow_back, size: 18),
-                    SizedBox(width: 8),
-                    Text('السابق'),
-                  ],
-                ),
+                child: _isSaving
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Colors.white))
+                    : Text(
+                        _currentStep < _totalSteps ? 'التالي' : 'حفظ',
+                        style: const TextStyle(fontSize: 16),
+                      ),
               ),
             ),
-          if (_currentStep > 0) const SizedBox(width: 12),
-          Expanded(
-            child: ElevatedButton(
-              onPressed: _isSaving ? null : _nextOrSave,
-              style: ElevatedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                backgroundColor: AppColors.accent,
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16)),
-              ),
-              child: _isSaving
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2))
-                  : Text(_currentStep < 1 ? 'التالي' : 'حفظ',
-                      style: const TextStyle(fontSize: 16)),
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
 
   void _nextOrSave() {
-    if (_currentStep < 1) {
+    if (_currentStep < _totalSteps) {
+      if (_currentStep == 0 && !_accountValid) {
+        _formKey.currentState?.validate();
+        setState(() => _errorMessage = 'يرجى تعبئة جميع حقول الحساب المطلوبة');
+        return;
+      }
       setState(() {
         _currentStep++;
+        _errorMessage = null;
         _animationController.reset();
         _animationController.forward();
       });
@@ -685,11 +620,9 @@ class _UserFormPageState extends State<UserFormPage>
     }
   }
 
-  // ✅ الدالة الوحيدة _save() داخل الكلاس
   Future<void> _save() async {
     if (_isSaving) return;
 
-    // ✅ التحقق من وجود form key
     if (_formKey.currentState == null) {
       setState(() {
         _errorMessage = 'النموذج لم يكتمل تحميله بعد. يرجى المحاولة مرة أخرى.';
@@ -697,7 +630,6 @@ class _UserFormPageState extends State<UserFormPage>
       return;
     }
 
-    // ✅ التحقق من صحة النموذج
     if (!_formKey.currentState!.validate()) {
       setState(() {
         _errorMessage = 'يرجى تعبئة جميع الحقول المطلوبة بشكل صحيح';
@@ -705,60 +637,43 @@ class _UserFormPageState extends State<UserFormPage>
       return;
     }
 
+    if (widget.user == null) {
+      if (_passwordController.text.trim().isEmpty) {
+        setState(() {
+          _errorMessage = 'كلمة المرور مطلوبة';
+        });
+        return;
+      }
+      if (_passwordController.text != _confirmPasswordController.text) {
+        setState(() {
+          _errorMessage = 'كلمة المرور وتأكيدها غير متطابقتين';
+        });
+        return;
+      }
+    }
+
     setState(() {
       _isSaving = true;
       _errorMessage = null;
     });
 
-    // ✅ بناء البيانات باستخدام double.tryParse لتجنب الأخطاء
     final userData = {
       'name': _nameController.text.trim(),
       'email': _emailController.text.trim(),
       'role': _role,
-
       if (_phoneController.text.trim().isNotEmpty)
         'phone': _phoneController.text.trim(),
-
       if (_idealWeightController.text.trim().isNotEmpty)
         'ideal_weight': double.tryParse(_idealWeightController.text.trim()),
-
       if (_targetWeightController.text.trim().isNotEmpty)
         'target_weight': double.tryParse(_targetWeightController.text.trim()),
-
       if (_currentWeightController.text.trim().isNotEmpty)
         'current_weight': double.tryParse(_currentWeightController.text.trim()),
-
       if (_heightController.text.trim().isNotEmpty)
         'height': double.tryParse(_heightController.text.trim()),
-
-      // بيانات الاشتراك
-      'subscription_start': _startDate.toIso8601String(),
-      'subscription_end': _endDate.toIso8601String(),
-      'multi_device_enabled': _allowMultiDevice,
-      'plan_type': _planTypeController.text.trim().isNotEmpty
-          ? _planTypeController.text.trim()
-          : 'monthly',
-      'price': double.tryParse(_priceController.text.trim()) ?? 199.99,
-      'max_devices': int.tryParse(_maxDevicesController.text.trim()) ?? 1,
     };
 
     if (widget.user == null) {
-      if (_passwordController.text.trim().isEmpty) {
-        setState(() {
-          _errorMessage = 'كلمة المرور مطلوبة';
-          _isSaving = false;
-        });
-        return;
-      }
-
-      if (_passwordController.text != _confirmPasswordController.text) {
-        setState(() {
-          _errorMessage = 'كلمة المرور وتأكيدها غير متطابقتين';
-          _isSaving = false;
-        });
-        return;
-      }
-
       userData['password'] = _passwordController.text;
       userData['password_confirmation'] = _confirmPasswordController.text;
     }
@@ -770,10 +685,12 @@ class _UserFormPageState extends State<UserFormPage>
         Navigator.of(context).pop(true);
       }
     } catch (e) {
-      setState(() {
-        _errorMessage = e.toString().replaceFirst('Exception: ', '');
-        _isSaving = false;
-      });
+      if (mounted) {
+        setState(() {
+          _errorMessage = e.toString().replaceFirst('Exception: ', '');
+          _isSaving = false;
+        });
+      }
     }
   }
 }

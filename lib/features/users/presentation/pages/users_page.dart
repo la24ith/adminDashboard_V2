@@ -37,6 +37,9 @@ class _UsersPageContentState extends State<_UsersPageContent> {
   final ScrollController _scrollController = ScrollController();
   Timer? _searchTimer;
 
+  // ✅ FIX #5: تتبع الرسائل المعروضة لتجنب التكرار في addPostFrameCallback
+  String? _lastShownMessage;
+
   @override
   void initState() {
     super.initState();
@@ -62,10 +65,8 @@ class _UsersPageContentState extends State<_UsersPageContent> {
     }
   }
 
-// ✅ دالة تحديث بيانات المستخدمين
   Future<void> _refreshUsers(
       BuildContext context, UsersController controller) async {
-    // عرض مؤشر تحميل في الـ SnackBar
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
         content: Row(
@@ -88,7 +89,6 @@ class _UsersPageContentState extends State<_UsersPageContent> {
     );
 
     try {
-      // ✅ تحديث البيانات من الـ API
       await controller.loadUsers(refresh: true);
 
       if (context.mounted) {
@@ -105,7 +105,6 @@ class _UsersPageContentState extends State<_UsersPageContent> {
             backgroundColor: AppColors.success,
             behavior: SnackBarBehavior.floating,
             duration: Duration(seconds: 2),
-            shape: RoundedRectangleBorder(),
           ),
         );
       }
@@ -124,35 +123,32 @@ class _UsersPageContentState extends State<_UsersPageContent> {
             backgroundColor: AppColors.error,
             behavior: SnackBarBehavior.floating,
             duration: const Duration(seconds: 3),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
           ),
         );
       }
     }
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final controller = context.watch<UsersController>();
-    final screenWidth = MediaQuery.of(context).size.width;
-
-    int crossAxisCount = 4;
-    if (screenWidth < 1200) crossAxisCount = 3;
-    if (screenWidth < 900) crossAxisCount = 2;
-    if (screenWidth < 600) crossAxisCount = 1;
-
-    // عرض رسائل النجاح والخطأ
+  // ✅ FIX #5: دالة مركزية لعرض الـ SnackBars بدون تكرار
+  void _showMessageIfNeeded(BuildContext context, UsersController controller) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (controller.successMessage != null && !controller.isDeleting) {
+      if (!mounted) return;
+
+      final successMsg = controller.successMessage;
+      final errorMsg = controller.error;
+
+      if (successMsg != null &&
+          !controller.isDeleting &&
+          successMsg != _lastShownMessage) {
+        _lastShownMessage = successMsg;
+        ScaffoldMessenger.of(context).clearSnackBars();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Row(
               children: [
                 const Icon(Icons.check_circle, color: Colors.white),
                 const SizedBox(width: 12),
-                Expanded(child: Text(controller.successMessage!)),
+                Expanded(child: Text(successMsg)),
               ],
             ),
             backgroundColor: AppColors.success,
@@ -165,28 +161,26 @@ class _UsersPageContentState extends State<_UsersPageContent> {
         controller.clearMessages();
       }
 
-      if (controller.error != null && !controller.isDeleting) {
+      if (errorMsg != null &&
+          !controller.isDeleting &&
+          errorMsg != _lastShownMessage) {
+        _lastShownMessage = errorMsg;
+        ScaffoldMessenger.of(context).clearSnackBars();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
+                const Row(
                   children: [
-                    const Icon(Icons.error_outline, color: Colors.white),
-                    const SizedBox(width: 12),
-                    const Text(
-                      'خطأ',
-                      style: TextStyle(fontWeight: FontWeight.bold),
-                    ),
+                    Icon(Icons.error_outline, color: Colors.white),
+                    SizedBox(width: 12),
+                    Text('خطأ', style: TextStyle(fontWeight: FontWeight.bold)),
                   ],
                 ),
-                const SizedBox(height: 8),
-                Text(
-                  controller.error!,
-                  style: const TextStyle(fontSize: 13),
-                ),
+                const SizedBox(height: 4),
+                Text(errorMsg, style: const TextStyle(fontSize: 13)),
               ],
             ),
             backgroundColor: AppColors.error,
@@ -199,6 +193,20 @@ class _UsersPageContentState extends State<_UsersPageContent> {
         controller.clearMessages();
       }
     });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final controller = context.watch<UsersController>();
+    final screenWidth = MediaQuery.of(context).size.width;
+
+    int crossAxisCount = 4;
+    if (screenWidth < 1200) crossAxisCount = 3;
+    if (screenWidth < 900) crossAxisCount = 2;
+    if (screenWidth < 600) crossAxisCount = 1;
+
+    // ✅ FIX #5: استدعاء الدالة المركزية بدل الكود المكرر في كل build
+    _showMessageIfNeeded(context, controller);
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -311,7 +319,6 @@ class _UsersPageContentState extends State<_UsersPageContent> {
                               itemCount: controller.users.length +
                                   (controller.hasMore ? 1 : 0),
                               itemBuilder: (context, index) {
-                                // عرض مؤشر تحميل في آخر القائمة
                                 if (index >= controller.users.length) {
                                   return const Center(
                                     child: Padding(
@@ -424,9 +431,11 @@ class _UsersPageContentState extends State<_UsersPageContent> {
     );
   }
 
-  // ✅ دوال العرض (نفسها موجودة في الملف الأصلي)
+  // ✅ FIX: استدعاء loadUsers مرة واحدة فقط بعد تأكيد النجاح
   Future<void> _showUserForm(BuildContext context, UsersController controller,
       {Map<String, dynamic>? user}) async {
+    _lastShownMessage = null;
+
     final result = await Navigator.push<bool>(
       context,
       MaterialPageRoute(
@@ -447,21 +456,23 @@ class _UsersPageContentState extends State<_UsersPageContent> {
       ),
     );
 
-    if (result == true) {
+    if (result == true && context.mounted) {
+      // ✅ استدعاء واحد فقط هنا — الـ Controller لا يستدعيه داخلياً
       await controller.loadUsers(refresh: true);
+
       if (context.mounted) {
         ScaffoldMessenger.of(context).clearSnackBars();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(controller.successMessage ??
-                (user == null
-                    ? 'تم إنشاء المستخدم بنجاح'
-                    : 'تم تحديث المستخدم بنجاح')),
+            content: Text(user == null
+                ? 'تم إنشاء المستخدم بنجاح'
+                : 'تم تحديث المستخدم بنجاح'),
             backgroundColor: AppColors.success,
             behavior: SnackBarBehavior.floating,
             duration: const Duration(seconds: 3),
           ),
         );
+        // ✅ مسح الرسائل لتجنب ظهورها مجدداً في _showMessageIfNeeded
         controller.clearMessages();
       }
     }
@@ -486,7 +497,6 @@ class _UsersPageContentState extends State<_UsersPageContent> {
       }
     });
   }
-// ✅ دوال مساعدة متجاوبة مع جميع الشاشات
 
   void _showExtendDialog(BuildContext context, UsersController controller,
       Map<String, dynamic> user) {
@@ -557,10 +567,13 @@ class _UsersPageContentState extends State<_UsersPageContent> {
 
     if (context.mounted) {
       if (success) {
-        await controller.refreshUserData(userId);
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text('تم تمديد الاشتراك $days يوماً'),
-            backgroundColor: AppColors.success));
+        await controller.loadUsers(refresh: true);
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: Text('تم تمديد الاشتراك $days يوماً'),
+              backgroundColor: AppColors.success));
+          controller.clearMessages();
+        }
       } else {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
             content: Text(controller.error ?? 'فشل تمديد الاشتراك'),
@@ -571,8 +584,12 @@ class _UsersPageContentState extends State<_UsersPageContent> {
 
   Future<void> _toggleDevice(BuildContext context, UsersController controller,
       Map<String, dynamic> user) async {
-    await controller.toggleMultiDevice(
+    final success = await controller.toggleMultiDevice(
         user['id'].toString(), user['multi_device_enabled'] ?? false);
+    if (success && context.mounted) {
+      await controller.loadUsers(refresh: true);
+      controller.clearMessages();
+    }
   }
 
   Future<void> _toggleStatus(BuildContext context, UsersController controller,
@@ -597,8 +614,12 @@ class _UsersPageContentState extends State<_UsersPageContent> {
       ),
     );
     if (confirmed != true) return;
-    await controller.toggleUserStatus(
+    final success = await controller.toggleUserStatus(
         user['id'].toString(), user['is_active'] ?? false);
+    if (success && context.mounted) {
+      await controller.loadUsers(refresh: true);
+      controller.clearMessages();
+    }
   }
 
   Future<void> _deleteUser(BuildContext context, UsersController controller,
@@ -633,18 +654,15 @@ class _UsersPageContentState extends State<_UsersPageContent> {
     }
   }
 
-// presentation/pages/users_page.dart
-
-// ✅ تحديث دالة _showAddWeightPage
   void _showAddWeightPage(BuildContext context, Map<String, dynamic> user) {
-    final controller = context.read<UsersController>(); // ✅ جلب الـ Controller
+    final controller = context.read<UsersController>();
 
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (_) => AddWeightPage(
           user: user,
-          controller: controller, // ✅ تمرير الـ Controller
+          controller: controller,
         ),
       ),
     ).then((result) {

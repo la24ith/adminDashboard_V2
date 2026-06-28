@@ -70,6 +70,36 @@ class ApiConstants {
     return '$cleanBase/storage/$cleanPath';
   }
 
+  static String processImageUrl(String url) {
+    final uri = Uri.tryParse(url);
+
+    if (uri == null) return url;
+
+    // التحقق أنه رابط Google Drive
+    final isGoogleDrive = uri.host.contains('drive.google.com') ||
+        uri.host.contains('docs.google.com');
+
+    if (!isGoogleDrive) {
+      return url;
+    }
+
+    // استخراج File ID
+    final patterns = [
+      RegExp(r'/d/([a-zA-Z0-9_-]+)'),
+      RegExp(r'id=([a-zA-Z0-9_-]+)'),
+    ];
+
+    for (final pattern in patterns) {
+      final match = pattern.firstMatch(url);
+      if (match != null) {
+        final fileId = match.group(1)!;
+        return 'https://drive.google.com/uc?export=view&id=$fileId';
+      }
+    }
+
+    return url;
+  }
+
   // ✅ دالة لإنشاء روابط بديلة (للمعاينة)
   static List<String> getAlternativeUrls(String path) {
     final cleanBase = baseUrl.replaceAll(RegExp(r'/api/?$'), '');

@@ -249,7 +249,7 @@ class _PostDetailsPageState extends State<PostDetailsPage> {
           children: [
             if (widget.post.hasThumbnail)
               CachedNetworkImage(
-                imageUrl: ApiConstants.mediaUrl(widget.post.thumbnail!),
+                imageUrl: ApiConstants.processImageUrl(widget.post.thumbnail!),
                 fit: BoxFit.cover,
                 placeholder: (context, url) => Container(
                   color: isDark ? Colors.grey[900] : Colors.grey[200],

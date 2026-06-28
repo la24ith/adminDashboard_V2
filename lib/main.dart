@@ -43,7 +43,7 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => DeviceManagementController()),
       ],
       child: MaterialApp(
-        title: 'WeightCare Admin',
+        title: 'لوحة التحكم',
         debugShowCheckedModeBanner: false,
         theme: ThemeData(
           primarySwatch: Colors.blue,

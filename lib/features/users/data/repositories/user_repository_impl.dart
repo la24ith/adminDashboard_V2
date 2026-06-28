@@ -29,10 +29,16 @@ class UserRepositoryImpl implements UserRepository {
     int perPage = 20,
     String? search,
     String? status,
+    // ✅ FIX #1: إضافة معامل لتجاوز الكاش عند الحاجة (مثلاً بعد الإضافة)
+    bool forceRefresh = false,
   }) async {
     try {
-      // 🔍 1. التحقق من الـ Cache (للصفحة الأولى فقط)
-      if (enableCache && page == 1 && search == null && status == null) {
+      // 🔍 1. التحقق من الـ Cache (للصفحة الأولى فقط، وليس عند forceRefresh)
+      if (enableCache &&
+          page == 1 &&
+          search == null &&
+          status == null &&
+          !forceRefresh) {
         final cached = await localDataSource.getCachedSubscriptions();
         if (cached != null) {
           return Right(cached);
@@ -96,8 +102,9 @@ class UserRepositoryImpl implements UserRepository {
         hasMore: paginatedResponse.hasMore,
       );
 
-      // 💾 5. حفظ في الـ Cache
+      // ✅ FIX #1: مسح الكاش القديم ثم حفظ الجديد
       if (enableCache && page == 1 && search == null && status == null) {
+        await localDataSource.clearCache(); // امسح القديم أولاً
         await localDataSource.cacheSubscriptions(result);
       }
 
@@ -164,10 +171,6 @@ class UserRepositoryImpl implements UserRepository {
         data: data,
       );
 
-      print('📥 Response status: ${response.statusCode}');
-      print('📥 Response data: ${response.data}');
-
-      // ✅ التحقق من وجود data
       if (response.data == null) {
         return Left(Failure(
           message: 'لا توجد بيانات للاشتراك',
@@ -185,19 +188,14 @@ class UserRepositoryImpl implements UserRepository {
         ));
       }
 
-      // ✅ التحقق: البيانات قد تكون مباشرة أو داخل 'subscription'
       Map<String, dynamic> subscriptionData;
-
-      // إذا كان الـ Response يحتوي على مفتاح 'subscription'
       if (responseData.containsKey('subscription') &&
           responseData['subscription'] != null) {
         subscriptionData = responseData['subscription'] as Map<String, dynamic>;
       } else {
-        // ✅ البيانات مباشرة (كما في الـ Logs)
         subscriptionData = responseData;
       }
 
-      // ✅ التحقق من وجود البيانات الأساسية للاشتراك
       if (!subscriptionData.containsKey('id') ||
           subscriptionData['id'] == null) {
         return Left(Failure(
@@ -205,6 +203,9 @@ class UserRepositoryImpl implements UserRepository {
           statusCode: response.statusCode,
         ));
       }
+
+      // ✅ FIX #1: مسح الكاش بعد التحديث
+      if (enableCache) await localDataSource.clearCache();
 
       final subscription = SubscriptionEntity.fromJson(subscriptionData);
       return Right(subscription);
@@ -229,9 +230,6 @@ class UserRepositoryImpl implements UserRepository {
         data: {'days': days},
       );
 
-      print('📥 Extend Response status: ${response.statusCode}');
-      print('📥 Extend Response data: ${response.data}');
-
       if (response.data == null) {
         return Left(Failure(
           message: 'لا توجد بيانات للاشتراك',
@@ -249,9 +247,7 @@ class UserRepositoryImpl implements UserRepository {
         ));
       }
 
-      // ✅ التحقق: البيانات قد تكون مباشرة أو داخل 'subscription'
       Map<String, dynamic> subscriptionData;
-
       if (responseData.containsKey('subscription') &&
           responseData['subscription'] != null) {
         subscriptionData = responseData['subscription'] as Map<String, dynamic>;
@@ -267,6 +263,9 @@ class UserRepositoryImpl implements UserRepository {
         ));
       }
 
+      // ✅ FIX #1: مسح الكاش بعد التمديد
+      if (enableCache) await localDataSource.clearCache();
+
       final subscription = SubscriptionEntity.fromJson(subscriptionData);
       return Right(subscription);
     } on DioException catch (e) {
@@ -280,10 +279,44 @@ class UserRepositoryImpl implements UserRepository {
   }
 
   @override
-  Future<Either<Failure, void>> deleteUser(int userId) async {
+  Future<Either<Failure, UserEntity>> createUser(
+      Map<String, dynamic> userData) async {
     try {
-      await dio.delete('/api/admin/users/$userId');
-      return const Right(null);
+      final response = await dio.post(
+        '/api/admin/users',
+        data: userData,
+      );
+
+      if (response.data == null) {
+        return Left(Failure(
+          message: 'لا توجد بيانات للمستخدم',
+          statusCode: response.statusCode,
+        ));
+      }
+
+      final Map<String, dynamic> responseData;
+      if (response.data is Map) {
+        responseData = response.data as Map<String, dynamic>;
+      } else {
+        return Left(Failure(
+          message: 'تنسيق البيانات غير صحيح',
+          statusCode: response.statusCode,
+        ));
+      }
+
+      final userData2 = responseData['data'] ?? responseData;
+      if (userData2 == null) {
+        return Left(Failure(
+          message: 'بيانات المستخدم غير موجودة',
+          statusCode: response.statusCode,
+        ));
+      }
+
+      // ✅ FIX #1: مسح الكاش فوراً بعد إنشاء مستخدم جديد
+      if (enableCache) await localDataSource.clearCache();
+
+      final user = UserEntity.fromJson(userData2);
+      return Right(user);
     } on DioException catch (e) {
       return Left(Failure(
         message: _handleDioError(e),
@@ -297,12 +330,12 @@ class UserRepositoryImpl implements UserRepository {
   @override
   Future<Either<Failure, UserEntity>> updateUser(
     int userId,
-    Map<String, dynamic> data,
+    Map<String, dynamic> userData,
   ) async {
     try {
       final response = await dio.put(
         '/api/admin/users/$userId',
-        data: data,
+        data: userData,
       );
 
       if (response.data == null) {
@@ -322,61 +355,18 @@ class UserRepositoryImpl implements UserRepository {
         ));
       }
 
-      final userData = responseData['data'] ?? responseData;
-      if (userData == null) {
+      final userDataMap = responseData['data'] ?? responseData;
+      if (userDataMap == null) {
         return Left(Failure(
           message: 'بيانات المستخدم غير موجودة',
           statusCode: response.statusCode,
         ));
       }
 
-      final user = UserEntity.fromJson(userData);
-      return Right(user);
-    } on DioException catch (e) {
-      return Left(Failure(
-        message: _handleDioError(e),
-        statusCode: e.response?.statusCode,
-      ));
-    } catch (e) {
-      return Left(Failure(message: e.toString()));
-    }
-  }
+      // ✅ FIX #1: مسح الكاش بعد تحديث المستخدم
+      if (enableCache) await localDataSource.clearCache();
 
-  @override
-  Future<Either<Failure, UserEntity>> createUser(
-      Map<String, dynamic> data) async {
-    try {
-      final response = await dio.post(
-        '/api/admin/users',
-        data: data,
-      );
-
-      if (response.data == null) {
-        return Left(Failure(
-          message: 'لا توجد بيانات للمستخدم',
-          statusCode: response.statusCode,
-        ));
-      }
-
-      final Map<String, dynamic> responseData;
-      if (response.data is Map) {
-        responseData = response.data as Map<String, dynamic>;
-      } else {
-        return Left(Failure(
-          message: 'تنسيق البيانات غير صحيح',
-          statusCode: response.statusCode,
-        ));
-      }
-
-      final userData = responseData['data'] ?? responseData;
-      if (userData == null) {
-        return Left(Failure(
-          message: 'بيانات المستخدم غير موجودة',
-          statusCode: response.statusCode,
-        ));
-      }
-
-      final user = UserEntity.fromJson(userData);
+      final user = UserEntity.fromJson(userDataMap);
       return Right(user);
     } on DioException catch (e) {
       return Left(Failure(
@@ -424,6 +414,8 @@ class UserRepositoryImpl implements UserRepository {
         ));
       }
 
+      if (enableCache) await localDataSource.clearCache();
+
       final user = UserEntity.fromJson(userData);
       return Right(user);
     } on DioException catch (e) {
@@ -464,9 +456,7 @@ class UserRepositoryImpl implements UserRepository {
         ));
       }
 
-      // ✅ التحقق: البيانات قد تكون مباشرة أو داخل 'subscription'
       Map<String, dynamic> subscriptionData;
-
       if (responseData.containsKey('subscription') &&
           responseData['subscription'] != null) {
         subscriptionData = responseData['subscription'] as Map<String, dynamic>;
@@ -481,6 +471,8 @@ class UserRepositoryImpl implements UserRepository {
           statusCode: response.statusCode,
         ));
       }
+
+      if (enableCache) await localDataSource.clearCache();
 
       final subscription = SubscriptionEntity.fromJson(subscriptionData);
       return Right(subscription);
@@ -541,10 +533,7 @@ class UserRepositoryImpl implements UserRepository {
       final weightData = response.data['data'] ?? response.data;
       final weightEntity = WeightEntity.fromJson(weightData);
 
-      // مسح الكاش بعد إضافة وزن جديد
-      if (enableCache) {
-        await localDataSource.clearCache();
-      }
+      if (enableCache) await localDataSource.clearCache();
 
       return Right(weightEntity);
     } on DioException catch (e) {
@@ -558,7 +547,6 @@ class UserRepositoryImpl implements UserRepository {
     }
   }
 
-  // ✅ 🆕 جلب تاريخ الأوزان لمستخدم
   @override
   Future<Either<Failure, List<WeightEntity>>> getUserWeightHistory(
     int userId, {
@@ -604,6 +592,23 @@ class UserRepositoryImpl implements UserRepository {
         ));
       }
 
+      if (enableCache) await localDataSource.clearCache(); // ✅ FIX: مسح الكاش بعد التغيير
+      return const Right(null);
+    } on DioException catch (e) {
+      return Left(Failure(
+        message: _handleDioError(e),
+        statusCode: e.response?.statusCode,
+      ));
+    } catch (e) {
+      return Left(Failure(message: e.toString()));
+    }
+  }
+
+  @override
+  Future<Either<Failure, void>> deleteUser(int userId) async {
+    try {
+      await dio.delete('/api/admin/users/$userId');
+      if (enableCache) await localDataSource.clearCache(); // ✅ FIX: مسح الكاش بعد الحذف
       return const Right(null);
     } on DioException catch (e) {
       return Left(Failure(

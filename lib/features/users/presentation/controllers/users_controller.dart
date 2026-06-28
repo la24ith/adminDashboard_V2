@@ -173,21 +173,59 @@ class UsersController extends ChangeNotifier {
     await loadUsers(refresh: true);
   }
 
-  // ✅ ✨ إنشاء مستخدم جديد
+  // ✅ ✨ إنشاء مستخدم جديد ثم تحديث الاشتراك في طلب منفصل
   Future<bool> createUser(Map<String, dynamic> userData) async {
     _startAction();
 
-    final result = await createUserUseCase(userData);
+    // ✅ استخراج بيانات الاشتراك قبل الإرسال
+    final subscriptionData = <String, dynamic>{};
+    const subscriptionKeys = [
+      'subscription_start',
+      'subscription_end',
+      'plan_type',
+      'price',
+      'max_devices',
+      'multi_device_enabled',
+    ];
+    for (final key in subscriptionKeys) {
+      if (userData.containsKey(key)) {
+        subscriptionData[key] = userData[key];
+      }
+    }
 
-    return result.fold(
-      (failure) {
+    // ✅ إرسال بيانات المستخدم الأساسية فقط للـ API
+    final userOnlyData = Map<String, dynamic>.from(userData)
+      ..removeWhere((key, _) => subscriptionKeys.contains(key));
+
+    final result = await createUserUseCase(userOnlyData);
+
+    return await result.fold(
+      (failure) async {
         _error = failure.message;
         _finishAction();
         return false;
       },
-      (_) {
-        _successMessage = 'تم إنشاء المستخدم بنجاح';
-        loadUsers(refresh: true);
+      (newUser) async {
+        // ✅ إذا توفرت بيانات اشتراك → أرسلها في طلب منفصل
+        if (subscriptionData.isNotEmpty) {
+          final subResult = await updateSubscriptionUseCase(
+            newUser.id,
+            subscriptionData,
+          );
+          subResult.fold(
+            (failure) {
+              _successMessage =
+                  'تم إنشاء المستخدم بنجاح، لكن فشل تحديث الاشتراك: ${failure.message}';
+            },
+            (_) {
+              _successMessage = 'تم إنشاء المستخدم وتحديث الاشتراك بنجاح';
+            },
+          );
+        } else {
+          _successMessage = 'تم إنشاء المستخدم بنجاح';
+        }
+
+        // ✅ FIX: لا نستدعي loadUsers هنا — الـ Page هي المسؤولة بعد انتظار النتيجة
         _finishAction();
         return true;
       },
@@ -208,7 +246,6 @@ class UsersController extends ChangeNotifier {
       },
       (_) {
         _successMessage = 'تم تحديث المستخدم بنجاح';
-        loadUsers(refresh: true);
         _finishAction();
         return true;
       },
@@ -256,7 +293,6 @@ class UsersController extends ChangeNotifier {
       },
       (_) {
         _successMessage = 'تم تمديد الاشتراك بنجاح (+$days يوماً)';
-        loadUsers(refresh: true);
         _finishAction();
         return true;
       },
@@ -278,7 +314,6 @@ class UsersController extends ChangeNotifier {
       },
       (_) {
         _successMessage = 'تم تحديث الاشتراك بنجاح';
-        loadUsers(refresh: true);
         _finishAction();
         return true;
       },
@@ -301,7 +336,6 @@ class UsersController extends ChangeNotifier {
       (_) {
         _successMessage =
             currentStatus ? 'تم تعليق المستخدم' : 'تم تفعيل المستخدم';
-        loadUsers(refresh: true);
         _finishAction();
         return true;
       },
@@ -331,8 +365,6 @@ class UsersController extends ChangeNotifier {
       },
       (weightEntity) {
         _successMessage = 'تم إضافة الوزن بنجاح';
-        // تحديث المستخدم في القائمة
-        loadUsers(refresh: true);
         _finishAction();
         return true;
       },
@@ -400,7 +432,6 @@ class UsersController extends ChangeNotifier {
         _successMessage = currentStatus
             ? 'تم تعطيل الأجهزة المتعددة'
             : 'تم تفعيل الأجهزة المتعددة';
-        loadUsers(refresh: true);
         _finishAction();
         return true;
       },
@@ -422,7 +453,6 @@ class UsersController extends ChangeNotifier {
       (_) {
         _successMessage =
             currentStatus ? 'تم منع تصوير الشاشة' : 'تم السماح بتصوير الشاشة';
-        loadUsers(refresh: true);
         _finishAction();
         return true;
       },

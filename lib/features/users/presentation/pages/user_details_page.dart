@@ -504,7 +504,7 @@ class _UserDetailsPageState extends State<UserDetailsPage>
               'الحالة', _translateStatus(user['subscription_status'])),
           _buildInfoRow('تاريخ البداية', user['subscription_start'] ?? '—'),
           _buildInfoRow('تاريخ النهاية', user['subscription_end'] ?? '—'),
-          _buildInfoRow('السعر', '${user['price'] ?? 0} ريال'),
+          _buildInfoRow('السعر', '${user['price'] ?? 0} ليرة سوري'),
           _buildInfoRow('الأجهزة المسموحة', '${user['max_devices'] ?? 1} جهاز'),
           _buildInfoRow(
             'الأجهزة المتعددة',
