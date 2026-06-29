@@ -2,15 +2,17 @@ import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import '../../../core/network/dio_client.dart';
 import '../../../core/constants/api_constants.dart';
+import '../models/notification_model.dart';
 
 class NotificationsController extends ChangeNotifier {
-  List<Map<String, dynamic>> _notifications = [];
+  // ✅ القائمة الآن من نوع NotificationModel بدل Map خام
+  List<NotificationModel> _notifications = [];
   bool _isLoading = false;
   bool _isActionInProgress = false;
   String? _error;
   String? _successMessage;
 
-  List<Map<String, dynamic>> get notifications => _notifications;
+  List<NotificationModel> get notifications => _notifications;
   bool get isLoading => _isLoading;
   bool get isActionInProgress => _isActionInProgress;
   String? get error => _error;
@@ -30,7 +32,12 @@ class NotificationsController extends ChangeNotifier {
       final response = await dio.get(ApiConstants.adminNotifications);
 
       if (response.statusCode == 200) {
-        _notifications = List<Map<String, dynamic>>.from(response.data['data'] ?? response.data);
+        final rawList = List<Map<String, dynamic>>.from(
+          response.data['data'] ?? response.data,
+        );
+        // ✅ تحويل فوري إلى NotificationModel — لا Map خام في أي مكان آخر
+        _notifications =
+            rawList.map((json) => NotificationModel.fromJson(json)).toList();
         _isLoading = false;
         notifyListeners();
       } else {
@@ -51,10 +58,15 @@ class NotificationsController extends ChangeNotifier {
 
     try {
       final dio = DioClient.instance;
-      final response = await dio.post(ApiConstants.adminNotifications, data: notificationData);
+      final response = await dio.post(
+        ApiConstants.adminNotifications,
+        data: notificationData,
+      );
 
       if (response.statusCode == 201 || response.statusCode == 200) {
-        _successMessage = notificationData.containsKey('send_at') ? 'تم جدولة الإشعار بنجاح' : 'تم إرسال الإشعار بنجاح';
+        _successMessage = notificationData.containsKey('send_at')
+            ? 'تم جدولة الإشعار بنجاح'
+            : 'تم إرسال الإشعار بنجاح';
         await loadNotifications();
         _isActionInProgress = false;
         notifyListeners();
@@ -70,7 +82,10 @@ class NotificationsController extends ChangeNotifier {
     }
   }
 
-  Future<bool> updateNotification(String notificationId, Map<String, dynamic> notificationData) async {
+  Future<bool> updateNotification(
+    String notificationId,
+    Map<String, dynamic> notificationData,
+  ) async {
     _isActionInProgress = true;
     _error = null;
     _successMessage = null;
@@ -108,10 +123,13 @@ class NotificationsController extends ChangeNotifier {
 
     try {
       final dio = DioClient.instance;
-      final response = await dio.delete('${ApiConstants.adminNotifications}/$notificationId');
+      final response = await dio.delete(
+        '${ApiConstants.adminNotifications}/$notificationId',
+      );
 
       if (response.statusCode == 200 || response.statusCode == 204) {
-        _notifications.removeWhere((n) => n['id'].toString() == notificationId);
+        // ✅ الحذف المحلي آمن الآن عبر id من NotificationModel
+        _notifications.removeWhere((n) => n.id == notificationId);
         _successMessage = 'تم حذف الإشعار بنجاح';
         _isActionInProgress = false;
         notifyListeners();
@@ -135,7 +153,8 @@ class NotificationsController extends ChangeNotifier {
 
     try {
       final dio = DioClient.instance;
-      final endpoint = ApiConstants.adminNotificationsExtend.replaceAll('{notification_id}', notificationId);
+      final endpoint = ApiConstants.adminNotificationsExtend
+          .replaceAll('{notification_id}', notificationId);
       final response = await dio.put(endpoint, data: {'days': days});
 
       if (response.statusCode == 200) {
@@ -189,25 +208,5 @@ class NotificationsController extends ChangeNotifier {
     _error = null;
     _successMessage = null;
     notifyListeners();
-  }
-
-  // ✅ دالة لحساب حالة الإشعار (للفلتر)
-  static String getNotificationStatus(Map<String, dynamic> notification) {
-    final sendAt = notification['send_at'] != null
-        ? DateTime.tryParse(notification['send_at'])
-        : null;
-    final sentAt = notification['sent_at'] != null
-        ? DateTime.tryParse(notification['sent_at'])
-        : null;
-    final expiresAt = notification['expires_at'] != null
-        ? DateTime.tryParse(notification['expires_at'])
-        : null;
-    final now = DateTime.now();
-
-    if (sentAt != null) return 'sent';
-    if (sendAt != null && sendAt.isAfter(now)) return 'scheduled';
-    if (expiresAt != null && expiresAt.isBefore(now)) return 'expired';
-    if (sendAt != null && sendAt.isBefore(now)) return 'sent';
-    return 'sent';
   }
 }

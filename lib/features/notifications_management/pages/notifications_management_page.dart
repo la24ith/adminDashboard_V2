@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../controllers/notifications_controller.dart';
+import '../models/notification_model.dart';
 import '../widgets/notification_card.dart';
 import '../widgets/notification_form_page.dart';
+import '../widgets/empty_state.dart';
+import '../widgets/notification_skeleton.dart';
 import '../../../core/constants/app_colors.dart';
 
 class NotificationsManagementPage extends StatelessWidget {
@@ -29,74 +32,72 @@ class _NotificationsPageContentState extends State<_NotificationsPageContent> {
   String _searchQuery = '';
   String _filterStatus = 'all';
 
-  // ✅ دالة تحديد حالة الإشعار (للفلتر)
-  String _getNotificationStatus(Map<String, dynamic> notification) {
-    final sendAt = notification['send_at'] != null
-        ? DateTime.tryParse(notification['send_at'])
-        : null;
-    final sentAt = notification['sent_at'] != null
-        ? DateTime.tryParse(notification['sent_at'])
-        : null;
-    final expiresAt = notification['expires_at'] != null
-        ? DateTime.tryParse(notification['expires_at'])
-        : null;
-    final now = DateTime.now();
-
-    if (sentAt != null) return 'sent';
-    if (sendAt != null && sendAt.isAfter(now)) return 'scheduled';
-    if (expiresAt != null && expiresAt.isBefore(now)) return 'expired';
-    if (sendAt != null && sendAt.isBefore(now)) return 'sent';
-    return 'sent';
-  }
-
-  List<Map<String, dynamic>> _getFilteredNotifications(
-      List<Map<String, dynamic>> notifications) {
-    return notifications.where((notification) {
-      // ✅ البحث
+  // ✅ الفلتر يعتمد الآن على NotificationModel.statusKey — لا تكرار للمنطق
+  List<NotificationModel> _getFilteredNotifications(
+    List<NotificationModel> notifications,
+  ) {
+    return notifications.where((n) {
       final matchesSearch = _searchQuery.isEmpty ||
-          (notification['title']?.toLowerCase().contains(_searchQuery.toLowerCase()) ??
-              false) ||
-          (notification['message']?.toLowerCase().contains(_searchQuery.toLowerCase()) ??
-              false);
+          n.title.toLowerCase().contains(_searchQuery.toLowerCase()) ||
+          n.message.toLowerCase().contains(_searchQuery.toLowerCase());
 
-      // ✅ الفلتر حسب الحالة
-      final status = _getNotificationStatus(notification);
-      final matchesFilter = _filterStatus == 'all' || status == _filterStatus;
+      final matchesFilter =
+          _filterStatus == 'all' || n.statusKey == _filterStatus;
 
       return matchesSearch && matchesFilter;
     }).toList();
+  }
+
+  // ✅ عرض رسائل النجاح/الخطأ مرة واحدة فقط عبر listener خارج build
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final controller = context.read<NotificationsController>();
+    controller.addListener(_onControllerChanged);
+  }
+
+  @override
+  void dispose() {
+    final controller = context.read<NotificationsController>();
+    controller.removeListener(_onControllerChanged);
+    super.dispose();
+  }
+
+  void _onControllerChanged() {
+    final controller = context.read<NotificationsController>();
+
+    if (controller.successMessage != null) {
+      ScaffoldMessenger.of(context).clearSnackBars();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(controller.successMessage!),
+          backgroundColor: AppColors.success,
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 3),
+        ),
+      );
+      controller.clearMessages();
+    }
+
+    if (controller.error != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(controller.error!),
+          backgroundColor: AppColors.error,
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 4),
+        ),
+      );
+      controller.clearMessages();
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final controller = context.watch<NotificationsController>();
 
-    // عرض رسائل النجاح والخطأ
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (controller.successMessage != null) {
-        ScaffoldMessenger.of(context).clearSnackBars();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(controller.successMessage!),
-            backgroundColor: AppColors.success,
-            behavior: SnackBarBehavior.floating,
-            duration: const Duration(seconds: 3),
-          ),
-        );
-        controller.clearMessages();
-      }
-      if (controller.error != null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(controller.error!),
-            backgroundColor: AppColors.error,
-            behavior: SnackBarBehavior.floating,
-            duration: const Duration(seconds: 4),
-          ),
-        );
-        controller.clearMessages();
-      }
-    });
+    // ✅ حساب القائمة المفلترة مرة واحدة فقط لكل build
+    final filtered = _getFilteredNotifications(controller.notifications);
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -113,7 +114,8 @@ class _NotificationsPageContentState extends State<_NotificationsPageContent> {
                   children: [
                     const Text(
                       'إدارة الإشعارات',
-                      style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+                      style:
+                          TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
                     ),
                     ElevatedButton.icon(
                       onPressed: controller.isActionInProgress
@@ -172,15 +174,30 @@ class _NotificationsPageContentState extends State<_NotificationsPageContent> {
           // Notifications List
           Expanded(
             child: controller.isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : _getFilteredNotifications(controller.notifications).isEmpty
-                    ? _buildEmptyState()
+                // ✅ استخدام NotificationSkeleton بدل CircularProgressIndicator
+                ? const NotificationSkeleton()
+                : filtered.isEmpty
+                    // ✅ استخدام EmptyState widget المُعرَّف مسبقاً
+                    ? EmptyState(
+                        message:
+                            _searchQuery.isNotEmpty || _filterStatus != 'all'
+                                ? 'لا توجد نتائج مطابقة للبحث'
+                                : 'لا توجد إشعارات',
+                        onAction:
+                            _searchQuery.isNotEmpty || _filterStatus != 'all'
+                                ? () => setState(() {
+                                      _searchQuery = '';
+                                      _filterStatus = 'all';
+                                    })
+                                : null,
+                      )
                     : ListView.builder(
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                        itemCount: _getFilteredNotifications(controller.notifications).length,
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 8),
+                        // ✅ استخدام filtered المحسوبة مسبقاً — لا استدعاء مكرر
+                        itemCount: filtered.length,
                         itemBuilder: (context, index) {
-                          final notification =
-                              _getFilteredNotifications(controller.notifications)[index];
+                          final notification = filtered[index];
                           return NotificationCard(
                             notification: notification,
                             onEdit: () => _showNotificationForm(controller,
@@ -189,8 +206,8 @@ class _NotificationsPageContentState extends State<_NotificationsPageContent> {
                                 context, controller, notification),
                             onExtend: () => _extendNotification(
                                 context, controller, notification),
-                            onSendNow: () => _sendNow(
-                                context, controller, notification),
+                            onSendNow: () =>
+                                _sendNow(context, controller, notification),
                           );
                         },
                       ),
@@ -210,48 +227,21 @@ class _NotificationsPageContentState extends State<_NotificationsPageContent> {
       selectedColor: AppColors.accent.withOpacity(0.1),
       checkmarkColor: AppColors.accent,
       labelStyle: TextStyle(
-          color: isSelected ? AppColors.accent : AppColors.textSecondary,
-          fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
-          fontSize: 12),
+        color: isSelected ? AppColors.accent : AppColors.textSecondary,
+        fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+        fontSize: 12,
+      ),
       padding: const EdgeInsets.symmetric(horizontal: 10),
     );
   }
 
-  Widget _buildEmptyState() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.notifications_off_outlined,
-              size: 80, color: AppColors.textTertiary.withOpacity(0.5)),
-          const SizedBox(height: 16),
-          Text(
-              _searchQuery.isNotEmpty || _filterStatus != 'all'
-                  ? 'لا توجد نتائج مطابقة للبحث'
-                  : 'لا توجد إشعارات',
-              style: TextStyle(fontSize: 16, color: AppColors.textSecondary)),
-          if (_searchQuery.isNotEmpty || _filterStatus != 'all')
-            TextButton(
-              onPressed: () {
-                setState(() {
-                  _searchQuery = '';
-                  _filterStatus = 'all';
-                });
-              },
-              child: const Text('مسح الفلتر'),
-            ),
-        ],
-      ),
-    );
-  }
-
-  void _showNotificationForm(NotificationsController controller,
-      {Map<String, dynamic>? notification}) {
-    final isSent = notification != null &&
-        (notification['sent_at'] != null ||
-            (notification['send_at'] != null &&
-                DateTime.parse(notification['send_at'])
-                    .isBefore(DateTime.now())));
+  void _showNotificationForm(
+    NotificationsController controller, {
+    NotificationModel? notification,
+  }) {
+    // ✅ التحقق من الحالة عبر NotificationModel.status — لا منطق مكرر
+    final isSent =
+        notification != null && notification.status == NotificationStatus.sent;
 
     if (isSent) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -268,14 +258,17 @@ class _NotificationsPageContentState extends State<_NotificationsPageContent> {
       context,
       MaterialPageRoute(
         builder: (context) => NotificationFormPage(
-          notification: notification,
+          // ✅ تمرير toJson() للـ form التي تتعامل مع Map
+          notification: notification?.toJson(),
           onSave: (notificationData) async {
             bool success;
             if (notification == null) {
               success = await controller.createNotification(notificationData);
             } else {
               success = await controller.updateNotification(
-                  notification['id'].toString(), notificationData);
+                notification.id,
+                notificationData,
+              );
             }
 
             if (success && context.mounted) {
@@ -307,13 +300,16 @@ class _NotificationsPageContentState extends State<_NotificationsPageContent> {
     );
   }
 
-  Future<void> _deleteNotification(BuildContext context,
-      NotificationsController controller, Map<String, dynamic> notification) async {
+  Future<void> _deleteNotification(
+    BuildContext context,
+    NotificationsController controller,
+    NotificationModel notification,
+  ) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: const Text('تأكيد الحذف'),
-        content: Text('هل أنت متأكد من حذف الإشعار "${notification['title']}"؟'),
+        content: Text('هل أنت متأكد من حذف الإشعار "${notification.title}"؟'),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         actions: [
           TextButton(
@@ -334,7 +330,8 @@ class _NotificationsPageContentState extends State<_NotificationsPageContent> {
 
     if (confirmed != true) return;
 
-    final success = await controller.deleteNotification(notification['id'].toString());
+    // ✅ id مضمون من NotificationModel — لا null risk
+    final success = await controller.deleteNotification(notification.id);
 
     if (!mounted) return;
 
@@ -360,21 +357,23 @@ class _NotificationsPageContentState extends State<_NotificationsPageContent> {
     }
   }
 
-  Future<bool> _extendNotification(BuildContext context,
-      NotificationsController controller, Map<String, dynamic> notification) async {
-    final success = await controller.extendNotification(notification['id'].toString(), 7);
-    if (success) {
-      await controller.loadNotifications();
-    }
+  Future<bool> _extendNotification(
+    BuildContext context,
+    NotificationsController controller,
+    NotificationModel notification,
+  ) async {
+    final success = await controller.extendNotification(notification.id, 7);
+    if (success) await controller.loadNotifications();
     return success;
   }
 
-  Future<bool> _sendNow(BuildContext context, NotificationsController controller,
-      Map<String, dynamic> notification) async {
-    final success = await controller.sendNow(notification['id'].toString());
-    if (success) {
-      await controller.loadNotifications();
-    }
+  Future<bool> _sendNow(
+    BuildContext context,
+    NotificationsController controller,
+    NotificationModel notification,
+  ) async {
+    final success = await controller.sendNow(notification.id);
+    if (success) await controller.loadNotifications();
     return success;
   }
 }

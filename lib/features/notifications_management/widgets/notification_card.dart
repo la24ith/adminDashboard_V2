@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import '../models/notification_model.dart';
 import '../../../core/constants/app_colors.dart';
 
 class NotificationCard extends StatefulWidget {
-  final Map<String, dynamic> notification;
+  // ✅ النوع الآن NotificationModel بدل Map خام
+  final NotificationModel notification;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
   final Future<bool> Function() onExtend;
@@ -24,146 +26,69 @@ class NotificationCard extends StatefulWidget {
 class _NotificationCardState extends State<NotificationCard> {
   bool _isHovered = false;
   bool _isUpdating = false;
-  late Map<String, dynamic> _notification;
 
-  @override
-  void initState() {
-    super.initState();
-    _notification = Map.from(widget.notification);
+  String _formatDateTime(DateTime? date) {
+    if (date == null) return '—';
+    return '${date.day}/${date.month}/${date.year} '
+        '${date.hour}:${date.minute.toString().padLeft(2, '0')}';
   }
 
-  String _formatDateTime(String? dateString) {
-    if (dateString == null) return '—';
-    try {
-      final date = DateTime.parse(dateString);
-      return '${date.day}/${date.month}/${date.year} ${date.hour}:${date.minute.toString().padLeft(2, '0')}';
-    } catch (e) {
-      return dateString;
-    }
-  }
-
-  String _getStatus() {
-    final sendAt = _notification['send_at'];
-    final sentAt = _notification['sent_at'];
-    final expiresAt = _notification['expires_at'];
-    final now = DateTime.now();
-
-    if (sentAt != null) return 'sent';
-    if (sendAt != null && DateTime.parse(sendAt).isAfter(now)) return 'scheduled';
-    if (expiresAt != null && DateTime.parse(expiresAt).isBefore(now)) return 'expired';
-    if (sendAt != null && DateTime.parse(sendAt).isBefore(now)) return 'sent';
-    return 'sent';
-  }
-
-  String _getDateText() {
-    final status = _getStatus();
-    final sendAt = _notification['send_at'];
-    final sentAt = _notification['sent_at'];
-
-    if (status == 'scheduled' && sendAt != null) {
-      return '📅 مجدول: ${_formatDateTime(sendAt)}';
-    } else if (sentAt != null) {
-      return '📨 أرسل: ${_formatDateTime(sentAt)}';
-    } else if (sendAt != null) {
-      return '📅 موعد الإرسال: ${_formatDateTime(sendAt)}';
+  // ✅ الحالة تأتي من NotificationModel.status — لا منطق مكرر هنا
+  String _getDateText(NotificationStatus status) {
+    final n = widget.notification;
+    if (status == NotificationStatus.scheduled && n.sendAt != null) {
+      return '📅 مجدول: ${_formatDateTime(n.sendAt)}';
+    } else if (n.sentAt != null) {
+      return '📨 أرسل: ${_formatDateTime(n.sentAt)}';
+    } else if (n.sendAt != null) {
+      return '📅 موعد الإرسال: ${_formatDateTime(n.sendAt)}';
     }
     return '—';
   }
 
-  // ✅ استخدام WidgetsBinding.instance لتجنب مشكلة الـ Context
   Future<void> _handleSendNow() async {
     if (_isUpdating) return;
-    
-    setState(() {
-      _isUpdating = true;
-    });
+    setState(() => _isUpdating = true);
 
     final success = await widget.onSendNow();
 
-    if (success && mounted) {
-      setState(() {
-        _notification['sent_at'] = DateTime.now().toIso8601String();
-        _notification['send_at'] = null;
-      });
-      
-      // ✅ استخدام addPostFrameCallback لتجنب مشكلة الـ Context
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).clearSnackBars();
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('✅ تم إرسال الإشعار بنجاح'),
-              backgroundColor: AppColors.success,
-              behavior: SnackBarBehavior.floating,
-              duration: const Duration(seconds: 3),
-            ),
-          );
-        }
-      });
-    } else if (mounted) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('❌ فشل إرسال الإشعار'),
-              backgroundColor: AppColors.error,
-              behavior: SnackBarBehavior.floating,
-              duration: const Duration(seconds: 3),
-            ),
-          );
-        }
-      });
-    }
-
     if (mounted) {
-      setState(() {
-        _isUpdating = false;
-      });
+      ScaffoldMessenger.of(context).clearSnackBars();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            success ? '✅ تم إرسال الإشعار بنجاح' : '❌ فشل إرسال الإشعار',
+          ),
+          backgroundColor: success ? AppColors.success : AppColors.error,
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 3),
+        ),
+      );
+      setState(() => _isUpdating = false);
     }
   }
 
   Future<void> _handleExtend() async {
     if (_isUpdating) return;
-    
-    setState(() {
-      _isUpdating = true;
-    });
+    setState(() => _isUpdating = true);
 
     final success = await widget.onExtend();
 
-    if (success && mounted) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).clearSnackBars();
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('✅ تم تمديد صلاحية الإشعار 7 أيام'),
-              backgroundColor: AppColors.success,
-              behavior: SnackBarBehavior.floating,
-              duration: const Duration(seconds: 3),
-            ),
-          );
-        }
-      });
-    } else if (mounted) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('❌ فشل تمديد الإشعار'),
-              backgroundColor: AppColors.error,
-              behavior: SnackBarBehavior.floating,
-              duration: const Duration(seconds: 3),
-            ),
-          );
-        }
-      });
-    }
-
     if (mounted) {
-      setState(() {
-        _isUpdating = false;
-      });
+      ScaffoldMessenger.of(context).clearSnackBars();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            success
+                ? '✅ تم تمديد صلاحية الإشعار 7 أيام'
+                : '❌ فشل تمديد الإشعار',
+          ),
+          backgroundColor: success ? AppColors.success : AppColors.error,
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 3),
+        ),
+      );
+      setState(() => _isUpdating = false);
     }
   }
 
@@ -171,17 +96,21 @@ class _NotificationCardState extends State<NotificationCard> {
   Widget build(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
     final isMobile = screenWidth < 600;
-    final status = _getStatus();
-    final isExpired = status == 'expired';
-    final isScheduled = status == 'scheduled';
-    final dateText = _getDateText();
+
+    // ✅ استخدام NotificationModel.status مباشرة
+    final status = widget.notification.status;
+    final isExpired = status == NotificationStatus.expired;
+    final isScheduled = status == NotificationStatus.scheduled;
+    final dateText = _getDateText(status);
 
     return MouseRegion(
       onEnter: (_) => setState(() => _isHovered = true),
       onExit: (_) => setState(() => _isHovered = false),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 300),
-        transform: _isHovered ? Matrix4.translationValues(0, -2, 0) : Matrix4.identity(),
+        transform: _isHovered
+            ? Matrix4.translationValues(0, -2, 0)
+            : Matrix4.identity(),
         margin: const EdgeInsets.only(bottom: 16),
         decoration: BoxDecoration(
           color: Colors.white,
@@ -223,7 +152,9 @@ class _NotificationCardState extends State<NotificationCard> {
                     decoration: BoxDecoration(
                       color: isExpired
                           ? AppColors.errorLight
-                          : (isScheduled ? AppColors.infoLight : AppColors.successLight),
+                          : (isScheduled
+                              ? AppColors.infoLight
+                              : AppColors.successLight),
                       borderRadius: BorderRadius.circular(16),
                     ),
                     child: _isUpdating
@@ -235,11 +166,15 @@ class _NotificationCardState extends State<NotificationCard> {
                         : Icon(
                             isExpired
                                 ? Icons.warning_amber_outlined
-                                : (isScheduled ? Icons.schedule_outlined : Icons.check_circle_outline),
+                                : (isScheduled
+                                    ? Icons.schedule_outlined
+                                    : Icons.check_circle_outline),
                             size: 24,
                             color: isExpired
                                 ? AppColors.error
-                                : (isScheduled ? AppColors.info : AppColors.success),
+                                : (isScheduled
+                                    ? AppColors.info
+                                    : AppColors.success),
                           ),
                   ),
                   const SizedBox(width: 16),
@@ -247,14 +182,21 @@ class _NotificationCardState extends State<NotificationCard> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        // ✅ وصول مباشر لخصائص النموذج — لا Map['key']
                         Text(
-                          _notification['title'] ?? 'بدون عنوان',
-                          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                          widget.notification.title.isEmpty
+                              ? 'بدون عنوان'
+                              : widget.notification.title,
+                          style: const TextStyle(
+                              fontSize: 16, fontWeight: FontWeight.w600),
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          _notification['message'] ?? '',
-                          style: const TextStyle(fontSize: 13, color: AppColors.textSecondary, height: 1.4),
+                          widget.notification.message,
+                          style: const TextStyle(
+                              fontSize: 13,
+                              color: AppColors.textSecondary,
+                              height: 1.4),
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -264,7 +206,9 @@ class _NotificationCardState extends State<NotificationCard> {
                             Icon(
                               Icons.access_time,
                               size: 14,
-                              color: isScheduled ? AppColors.info : AppColors.textTertiary,
+                              color: isScheduled
+                                  ? AppColors.info
+                                  : AppColors.textTertiary,
                             ),
                             const SizedBox(width: 8),
                             Expanded(
@@ -272,8 +216,12 @@ class _NotificationCardState extends State<NotificationCard> {
                                 dateText,
                                 style: TextStyle(
                                   fontSize: 12,
-                                  color: isScheduled ? AppColors.info : AppColors.textTertiary,
-                                  fontWeight: isScheduled ? FontWeight.w500 : FontWeight.normal,
+                                  color: isScheduled
+                                      ? AppColors.info
+                                      : AppColors.textTertiary,
+                                  fontWeight: isScheduled
+                                      ? FontWeight.w500
+                                      : FontWeight.normal,
                                 ),
                               ),
                             ),
@@ -281,21 +229,28 @@ class _NotificationCardState extends State<NotificationCard> {
                         ),
                         const SizedBox(height: 12),
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 4),
                           decoration: BoxDecoration(
                             color: isExpired
                                 ? AppColors.errorLight
-                                : (isScheduled ? AppColors.infoLight : AppColors.successLight),
+                                : (isScheduled
+                                    ? AppColors.infoLight
+                                    : AppColors.successLight),
                             borderRadius: BorderRadius.circular(20),
                           ),
                           child: Text(
-                            isExpired ? 'منتهي' : (isScheduled ? 'مجدول' : 'مرسل'),
+                            isExpired
+                                ? 'منتهي'
+                                : (isScheduled ? 'مجدول' : 'مرسل'),
                             style: TextStyle(
                               fontSize: 11,
                               fontWeight: FontWeight.w600,
                               color: isExpired
                                   ? AppColors.error
-                                  : (isScheduled ? AppColors.info : AppColors.success),
+                                  : (isScheduled
+                                      ? AppColors.info
+                                      : AppColors.success),
                             ),
                           ),
                         ),
@@ -304,29 +259,33 @@ class _NotificationCardState extends State<NotificationCard> {
                   ),
                   if ((_isHovered || isMobile) && !_isUpdating)
                     PopupMenuButton<String>(
-                      icon: Icon(Icons.more_vert, color: AppColors.textTertiary),
-                      onSelected: (value) => _handleMenuAction(value),
+                      icon:
+                          Icon(Icons.more_vert, color: AppColors.textTertiary),
+                      onSelected: _handleMenuAction,
                       offset: const Offset(0, 40),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12)),
                       elevation: 4,
                       itemBuilder: (context) => [
-                        if (status != 'sent')
+                        if (status != NotificationStatus.sent)
                           const PopupMenuItem(
                             value: 'edit',
                             child: Row(
                               children: [
-                                Icon(Icons.edit_outlined, size: 18, color: AppColors.info),
+                                Icon(Icons.edit_outlined,
+                                    size: 18, color: AppColors.info),
                                 SizedBox(width: 12),
                                 Text('تعديل الإشعار'),
                               ],
                             ),
                           ),
-                        if (status == 'scheduled')
+                        if (status == NotificationStatus.scheduled)
                           const PopupMenuItem(
                             value: 'send_now',
                             child: Row(
                               children: [
-                                Icon(Icons.send, size: 18, color: AppColors.success),
+                                Icon(Icons.send,
+                                    size: 18, color: AppColors.success),
                                 SizedBox(width: 12),
                                 Text('إرسال الآن'),
                               ],
@@ -336,7 +295,8 @@ class _NotificationCardState extends State<NotificationCard> {
                           value: 'extend',
                           child: Row(
                             children: [
-                              Icon(Icons.timer_outlined, size: 18, color: AppColors.warning),
+                              Icon(Icons.timer_outlined,
+                                  size: 18, color: AppColors.warning),
                               SizedBox(width: 12),
                               Text('تمديد الصلاحية'),
                             ],
@@ -347,9 +307,11 @@ class _NotificationCardState extends State<NotificationCard> {
                           value: 'delete',
                           child: Row(
                             children: [
-                              Icon(Icons.delete_outline, size: 18, color: AppColors.error),
+                              Icon(Icons.delete_outline,
+                                  size: 18, color: AppColors.error),
                               SizedBox(width: 12),
-                              Text('حذف الإشعار', style: TextStyle(color: AppColors.error)),
+                              Text('حذف الإشعار',
+                                  style: TextStyle(color: AppColors.error)),
                             ],
                           ),
                         ),
