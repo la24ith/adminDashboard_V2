@@ -57,6 +57,9 @@ class PostsController extends ChangeNotifier {
   final Map<String, bool> _uploadingMedia = {};
   final Map<String, double> _uploadProgressMap = {};
 
+  // Per-post details loading tracking (used by UI e.g. PostCard tap)
+  final Map<int, bool> _loadingDetails = {};
+
   // ==================== LIFECYCLE SAFETY ====================
   bool _isDisposed = false;
 
@@ -89,6 +92,9 @@ class PostsController extends ChangeNotifier {
 
   bool isUploadingMedia(String key) => _uploadingMedia[key] ?? false;
   double getUploadProgress(String key) => _uploadProgressMap[key] ?? 0.0;
+
+  /// هل يتم حالياً جلب تفاصيل المنشور صاحب هذا المعرف (يُستخدم لإظهار مؤشر تحميل على الكرت)
+  bool isLoadingPostDetails(int postId) => _loadingDetails[postId] ?? false;
 
   PostsController();
 
@@ -174,6 +180,34 @@ class PostsController extends ChangeNotifier {
     _currentPage = 1;
     _hasMore = true;
     _posts.clear();
+  }
+
+  /// جلب تفاصيل منشور واحد كاملة عبر GET {{base_url}}/api/admin/posts/{post_id}
+  /// تُستخدم عند فتح صفحة تفاصيل المنشور (مثلاً عند الضغط على كرت المنشور)
+  /// لضمان وصول كل بيانات الوسائط (فيديو/صوت/صور) حتى لو لم تكن متوفرة
+  /// بالكامل في استجابة قائمة المنشورات.
+  Future<Post> getPostDetails(int postId, {bool forceRefresh = false}) async {
+    _loadingDetails[postId] = true;
+    _safeNotify();
+
+    try {
+      final post = forceRefresh
+          ? await _repository.getPostById(postId)
+          : await _repository.getPostById(postId);
+
+      if (!_isDisposed) {
+        // تحديث المنشور في القائمة المحلية إن وجد، حتى تكون البيانات متسقة
+        _updatePostInList(post);
+      }
+
+      return post;
+    } catch (e) {
+      _error = _getErrorMessage(e);
+      rethrow;
+    } finally {
+      _loadingDetails[postId] = false;
+      _safeNotify();
+    }
   }
 
   Future<bool> createPost({

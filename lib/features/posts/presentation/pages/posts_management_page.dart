@@ -968,6 +968,7 @@ class _PostCardWrapper extends StatelessWidget {
       onDelete: () => _deletePost(context, post),
       onDeleteAudio: () => _deleteAudioOnly(context, post),
       onReschedule: () => _showRescheduleDialog(context, post),
+      onFetchDetails: controller.getPostDetails,
     );
   }
 

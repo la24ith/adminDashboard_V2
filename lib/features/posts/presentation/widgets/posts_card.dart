@@ -1,5 +1,6 @@
 // lib/features/posts/presentation/widgets/post_card.dart
 import 'package:admin_dashboard/features/posts/data/models/post_model.dart';
+import 'package:admin_dashboard/features/posts/data/repositories/post_repository.dart';
 import 'package:admin_dashboard/features/posts/presentation/pages/post_details_page.dart';
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -13,6 +14,12 @@ class PostCard extends StatefulWidget {
   final VoidCallback onDeleteAudio;
   final VoidCallback onReschedule;
 
+  /// دالة اختيارية لجلب تفاصيل المنشور الكاملة (GET /api/admin/posts/{id}).
+  /// إن مُررت (مثلاً من الصفحة الأم عبر PostsController.getPostDetails)
+  /// سيتم استخدامها بدل إنشاء PostRepository محلي داخل الكرت،
+  /// مما يبقي حالة التحميل والكاش مركزية في الكنترولر.
+  final Future<Post> Function(int postId)? onFetchDetails;
+
   const PostCard({
     super.key,
     required this.post,
@@ -20,6 +27,7 @@ class PostCard extends StatefulWidget {
     required this.onDelete,
     required this.onDeleteAudio,
     required this.onReschedule,
+    this.onFetchDetails,
   });
 
   @override
@@ -29,9 +37,12 @@ class PostCard extends StatefulWidget {
 class _PostCardState extends State<PostCard>
     with SingleTickerProviderStateMixin {
   bool _isHovered = false;
+  bool _isLoadingDetails = false;
   late AnimationController _hoverController;
   late Animation<double> _scaleAnimation;
   late Animation<double> _elevationAnimation;
+  // يُستخدم فقط كحل بديل عندما لا يُمرَّر onFetchDetails من الصفحة الأم
+  final PostRepository _postRepository = PostRepository();
 
   @override
   void initState() {
@@ -57,7 +68,9 @@ class _PostCardState extends State<PostCard>
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: () => _navigateToDetails(context, widget.post),
+      onTap: _isLoadingDetails
+          ? null
+          : () => _navigateToDetails(context, widget.post),
       child: MouseRegion(
         onEnter: (_) {
           setState(() => _isHovered = true);
@@ -90,12 +103,36 @@ class _PostCardState extends State<PostCard>
                       ),
                     ],
                   ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                  child: Stack(
                     children: [
-                      _buildMediaPreview(),
-                      _buildContentSection(),
-                      _buildActionButtons(),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _buildMediaPreview(),
+                          _buildContentSection(),
+                          _buildActionButtons(),
+                        ],
+                      ),
+                      if (_isLoadingDetails)
+                        Positioned.fill(
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(24),
+                            child: Container(
+                              color: Colors.black.withOpacity(0.25),
+                              child: const Center(
+                                child: SizedBox(
+                                  width: 28,
+                                  height: 28,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2.5,
+                                    valueColor: AlwaysStoppedAnimation<Color>(
+                                        Colors.white),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
                     ],
                   ),
                 ),
@@ -526,12 +563,39 @@ class _PostCardState extends State<PostCard>
     return '${date.day}/${date.month} ${date.hour}:${date.minute.toString().padLeft(2, '0')}';
   }
 
-  void _navigateToDetails(BuildContext context, Post post) {
+  /// عند النقر على الكرت: نجلب تفاصيل المنشور الكاملة من
+  /// GET {{base_url}}/api/admin/posts/{post_id}
+  /// (لضمان وصول كل بيانات الوسائط/الفيديو/الصوت غير المتوفرة أحياناً في قائمة المنشورات)
+  /// ثم نفتح صفحة التفاصيل بهذه البيانات الكاملة.
+  void _navigateToDetails(BuildContext context, Post post) async {
+    setState(() => _isLoadingDetails = true);
+
+    Post fullPost = post; // قيمة احتياطية في حال فشل الطلب
+    try {
+      fullPost = widget.onFetchDetails != null
+          ? await widget.onFetchDetails!(post.id)
+          : await _postRepository.getPostById(post.id);
+    } catch (e) {
+      debugPrint(
+          '⚠️ فشل جلب تفاصيل المنشور ${post.id}، سيتم عرض البيانات المتوفرة محلياً: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+                'تعذر تحميل أحدث تفاصيل المنشور، يتم عرض البيانات المتوفرة'),
+          ),
+        );
+      }
+    }
+
+    if (!mounted) return;
+    setState(() => _isLoadingDetails = false);
+
     Navigator.push(
       context,
       PageRouteBuilder(
         pageBuilder: (context, animation, secondaryAnimation) =>
-            PostDetailsPage(post: post),
+            PostDetailsPage(post: fullPost),
         transitionsBuilder: (context, animation, secondaryAnimation, child) {
           const begin = Offset(0.3, 0);
           const end = Offset.zero;
