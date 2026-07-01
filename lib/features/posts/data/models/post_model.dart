@@ -72,7 +72,16 @@ class PostMedia extends Equatable {
       id: json['id'],
       postId: json['post_id'],
       type: json['type'],
-      filePath: json['file_path'] ?? '',
+      // ✅ إصلاح جوهري: الـ API الحالي لا يرجع حقل "file_path" إطلاقاً
+      // ضمن عناصر media (تحقّقنا من الـ response الفعلي)، بل يرجع
+      // "file_url" أو "url" — وهما رابط signed-media كامل وجاهز
+      // للاستخدام مباشرة. كان الكود يقرأ file_path دائماً فيحصل على
+      // '' (فارغة)، فيرسل الفيديو/الصوت طلباً لجذر الدومين بدون أي
+      // مسار (نفس خطأ 404/ROUTE_NOT_FOUND الذي شاهدناه).
+      // نُبقي على الترتيب: file_url أولاً، ثم url، ثم file_path كـ
+      // fallback أخير في حال أضافه الباك اند لاحقاً بشكل مختلف.
+      filePath: (json['file_url'] ?? json['url'] ?? json['file_path'] ?? '')
+          as String,
       fileName: json['file_name'] ?? '',
       fileSize: json['file_size'] ?? 0,
       mimeType: json['mime_type'],

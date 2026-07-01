@@ -186,14 +186,15 @@ class PostsController extends ChangeNotifier {
   /// تُستخدم عند فتح صفحة تفاصيل المنشور (مثلاً عند الضغط على كرت المنشور)
   /// لضمان وصول كل بيانات الوسائط (فيديو/صوت/صور) حتى لو لم تكن متوفرة
   /// بالكامل في استجابة قائمة المنشورات.
-  Future<Post> getPostDetails(int postId, {bool forceRefresh = false}) async {
+  Future<Post> getPostDetails(int postId, {bool forceRefresh = true}) async {
     _loadingDetails[postId] = true;
     _safeNotify();
 
     try {
-      final post = forceRefresh
-          ? await _repository.getPostById(postId)
-          : await _repository.getPostById(postId);
+      final post = await _repository.getPostById(
+        postId,
+        forceRefresh: forceRefresh,
+      );
 
       if (!_isDisposed) {
         // تحديث المنشور في القائمة المحلية إن وجد، حتى تكون البيانات متسقة
@@ -248,15 +249,30 @@ class PostsController extends ChangeNotifier {
 
       final int postId = response.data['id'];
 
-      await _uploadAllMedia(
-        postId,
-        thumbnailFile,
-        thumbnailUrl,
-        videoFile,
-        videoUrl,
-        audioFile,
-        audioUrl,
-      );
+      try {
+        await _uploadAllMedia(
+          postId,
+          thumbnailFile,
+          thumbnailUrl,
+          videoFile,
+          videoUrl,
+          audioFile,
+          audioUrl,
+        );
+      } catch (mediaError) {
+        // ❗ فشل رفع أحد الملحقات: لا نترك منشوراً منشوراً بدون وسائطه.
+        // نحذف المنشور الذي أُنشئ للتو (rollback) حتى لا يظهر للمستخدمين
+        // بشكل ناقص أو بدون الفيديو/الصورة/الصوت المطلوب.
+        debugPrint(
+            '⚠️ فشل رفع الوسائط، سيتم حذف المنشور الذي تم إنشاؤه (id=$postId): $mediaError');
+        try {
+          await dio.delete('${ApiConstants.adminPosts}/$postId');
+          _repository.deletePostFromCache(postId);
+        } catch (rollbackError) {
+          debugPrint('⚠️ تعذر حذف المنشور بعد فشل رفع الوسائط: $rollbackError');
+        }
+        rethrow;
+      }
 
       if (_isDisposed) return false;
 
@@ -272,6 +288,7 @@ class PostsController extends ChangeNotifier {
     } catch (e) {
       if (_isDisposed) return false;
       _error = _getErrorMessage(e);
+      _showSnackBar(_error!, isError: true);
       return false;
     } finally {
       // نضمن إعادة الحالة في حال وقع استثناء
@@ -317,15 +334,23 @@ class PostsController extends ChangeNotifier {
         if (_isDisposed) return false;
       }
 
-      await _uploadAllMedia(
-        postId,
-        thumbnailFile,
-        thumbnailUrl,
-        videoFile,
-        videoUrl,
-        audioFile,
-        audioUrl,
-      );
+      try {
+        await _uploadAllMedia(
+          postId,
+          thumbnailFile,
+          thumbnailUrl,
+          videoFile,
+          videoUrl,
+          audioFile,
+          audioUrl,
+        );
+      } catch (mediaError) {
+        // ❗ فشل رفع أحد الملحقات أثناء التحديث: لا نعرض رسالة نجاح
+        // ولا نعيد تحميل القائمة وكأن كل شيء تم بنجاح.
+        debugPrint(
+            '⚠️ فشل رفع الوسائط أثناء تحديث المنشور $postId: $mediaError');
+        rethrow;
+      }
 
       if (_isDisposed) return false;
 
@@ -341,6 +366,7 @@ class PostsController extends ChangeNotifier {
     } catch (e) {
       if (_isDisposed) return false;
       _error = _getErrorMessage(e);
+      _showSnackBar(_error!, isError: true);
       return false;
     } finally {
       // نضمن إعادة الحالة في حال وقع استثناء
@@ -586,34 +612,132 @@ class PostsController extends ChangeNotifier {
       debugPrint('✅ Response status: ${response.statusCode}');
       debugPrint('📦 Response data: ${response.data}');
 
-      if (response.statusCode == 201 || response.statusCode == 200) {
-        String? filePath = response.data['file_path'] ??
-            response.data['url'] ??
-            response.data['path'];
+      final statusCode = response.statusCode ?? 0;
 
-        if (filePath != null && filePath.isNotEmpty) {
-          String cleanPath = _cleanFilePath(filePath);
-          String fieldName = type == 'thumbnail' ? 'thumbnail' : '${type}_url';
-          await _updatePostField(postId, fieldName, cleanPath);
-          debugPrint('✅ Uploaded: $cleanPath');
-
-          _showSnackBar('تم رفع ${_getTypeName(type)} بنجاح');
-        }
+      // ✅ إصلاح جوهري: أي استجابة ليست 200/201 تُعتبر فشلاً صريحاً
+      // (بعض إعدادات Dio لا ترمي DioException تلقائياً على الأكواد
+      // غير الناجحة، لذا كان الرفع يفشل بصمت دون أي رسالة للمستخدم
+      // ودون منع نشر المنشور).
+      if (statusCode != 200 && statusCode != 201) {
+        final msg = _buildMediaErrorMessage(
+          statusCode: statusCode,
+          responseData: response.data,
+          type: type,
+        );
+        _showSnackBar(msg, isError: true);
+        throw Exception(msg);
       }
+
+      String? filePath = (response.data is Map)
+          ? (response.data['file_path'] ??
+              response.data['url'] ??
+              response.data['path'])
+          : null;
+
+      if (filePath == null || filePath.isEmpty) {
+        final msg =
+            'فشل رفع ${_getTypeName(type)}: لم يستلم التطبيق مسار الملف من الخادم';
+        _showSnackBar(msg, isError: true);
+        throw Exception(msg);
+      }
+
+      String cleanPath = _cleanFilePath(filePath);
+      String fieldName = type == 'thumbnail' ? 'thumbnail' : '${type}_url';
+      await _updatePostField(postId, fieldName, cleanPath);
+      debugPrint('✅ Uploaded: $cleanPath');
+
+      _showSnackBar('تم رفع ${_getTypeName(type)} بنجاح');
     } on DioException catch (e) {
       debugPrint('❌ Upload error: ${e.response?.statusCode}');
       debugPrint('   Response: ${e.response?.data}');
 
-      String errorMsg =
-          e.response?.data?['message'] ?? e.message ?? 'فشل الرفع';
-      _showSnackBar(errorMsg, isError: true);
-      rethrow;
+      final msg = _buildMediaErrorMessage(
+        statusCode: e.response?.statusCode,
+        responseData: e.response?.data,
+        type: type,
+        dioException: e,
+      );
+      _showSnackBar(msg, isError: true);
+      throw Exception(msg);
     } finally {
       if (!_isDisposed) {
         _uploadingMedia[type] = false;
         _safeNotify();
       }
     }
+  }
+
+  /// يبني رسالة خطأ عربية واضحة لفشل رفع ملحق (صورة/فيديو/صوت)
+  /// بأمان تام (لا يفترض أن response.data هو JSON/Map، لأن بعض
+  /// أخطاء الخادم مثل 413 تُعيد صفحة HTML وليس JSON).
+  String _buildMediaErrorMessage({
+    required int? statusCode,
+    required dynamic responseData,
+    required String type,
+    DioException? dioException,
+  }) {
+    final typeName = _getTypeName(type);
+
+    if (statusCode == 413) {
+      return 'فشل رفع $typeName: حجم الملف كبير جداً على الخادم. '
+          'يرجى اختيار ملف أصغر أو ضغط الفيديو قبل الرفع والمحاولة مرة أخرى.';
+    }
+
+    if (statusCode == 422) {
+      final serverMsg = _extractServerMessage(responseData);
+      return 'فشل رفع $typeName: ${serverMsg.isNotEmpty ? serverMsg : 'بيانات الملف غير صالحة أو صيغته غير مدعومة'}';
+    }
+
+    if (statusCode == 415) {
+      return 'فشل رفع $typeName: صيغة الملف غير مدعومة من الخادم';
+    }
+
+    if (statusCode == 401 || statusCode == 403) {
+      return 'فشل رفع $typeName: ليست لديك صلاحية القيام بهذا الإجراء، يرجى تسجيل الدخول من جديد';
+    }
+
+    if (statusCode != null && statusCode >= 500) {
+      return 'فشل رفع $typeName: حدث خطأ في الخادم، يرجى المحاولة لاحقاً';
+    }
+
+    if (dioException != null) {
+      switch (dioException.type) {
+        case DioExceptionType.connectionTimeout:
+        case DioExceptionType.sendTimeout:
+          return 'فشل رفع $typeName: انتهى وقت الاتصال، يرجى التحقق من الإنترنت والمحاولة مرة أخرى';
+        case DioExceptionType.receiveTimeout:
+          return 'فشل رفع $typeName: انتهى وقت انتظار استجابة الخادم';
+        case DioExceptionType.connectionError:
+          return 'فشل رفع $typeName: تعذر الاتصال بالخادم، يرجى التحقق من اتصال الإنترنت';
+        default:
+          break;
+      }
+    }
+
+    final serverMsg = _extractServerMessage(responseData);
+    if (serverMsg.isNotEmpty) {
+      return 'فشل رفع $typeName: $serverMsg';
+    }
+
+    return 'فشل رفع $typeName، يرجى المحاولة مرة أخرى';
+  }
+
+  /// استخراج رسالة خطأ من استجابة الخادم بأمان (فقط إذا كانت JSON/Map)
+  String _extractServerMessage(dynamic responseData) {
+    if (responseData is Map) {
+      if (responseData['message'] is String) {
+        return responseData['message'] as String;
+      }
+      final errors = responseData['errors'];
+      if (errors is Map && errors.isNotEmpty) {
+        final firstValue = errors.values.first;
+        if (firstValue is List && firstValue.isNotEmpty) {
+          return firstValue.first.toString();
+        }
+        return firstValue.toString();
+      }
+    }
+    return '';
   }
 
   // دالة مساعدة للحصول على اسم النوع بالعربية
@@ -689,14 +813,11 @@ class PostsController extends ChangeNotifier {
   String _getErrorMessage(dynamic error) {
     if (error is DioException) {
       if (error.response?.statusCode == 422) {
-        final errors = error.response?.data['errors'];
-        if (errors is Map && errors.isNotEmpty) {
-          return errors.values.first.first;
-        }
-        return 'بيانات غير صالحة';
+        final msg = _extractServerMessage(error.response?.data);
+        return msg.isNotEmpty ? msg : 'بيانات غير صالحة';
       }
       if (error.response?.statusCode == 413) {
-        return 'الملف كبير جداً. الحد الأقصى للرفع هو 50 ميجابايت';
+        return 'حجم الملف كبير جداً على الخادم، يرجى اختيار ملف أصغر والمحاولة مرة أخرى';
       }
       if (error.type == DioExceptionType.connectionTimeout) {
         return 'انتهى وقت الاتصال، يرجى المحاولة مرة أخرى';
@@ -704,9 +825,18 @@ class PostsController extends ChangeNotifier {
       if (error.type == DioExceptionType.receiveTimeout) {
         return 'انتهى وقت الاستلام، يرجى المحاولة مرة أخرى';
       }
-      return error.message ?? 'حدث خطأ غير متوقع';
+      if (error.type == DioExceptionType.connectionError) {
+        return 'تعذر الاتصال بالخادم، يرجى التحقق من اتصال الإنترنت';
+      }
+      final serverMsg = _extractServerMessage(error.response?.data);
+      return serverMsg.isNotEmpty
+          ? serverMsg
+          : (error.message ?? 'حدث خطأ غير متوقع');
     }
-    return error.toString();
+    // رسائلنا المخصصة (مثل أخطاء رفع الوسائط) تُبنى عبر Exception('نص عربي واضح')
+    // نزيل بادئة "Exception: " الافتراضية حتى تظهر نظيفة للمستخدم.
+    final text = error.toString();
+    return text.startsWith('Exception: ') ? text.substring(11) : text;
   }
 
   String _handleUploadError(DioException e) {

@@ -146,18 +146,24 @@ class PostRepository {
   }
 
   /// جلب منشور واحد بالمعرف
-  Future<Post> getPostById(int id) async {
+  /// [forceRefresh] = true يتجاوز الكاش ويجلب دائماً النسخة الكاملة
+  /// من GET /api/admin/posts/{id} — مهم لأن النسخة المخزنة في كاش
+  /// الصفحات (من GET /api/admin/posts) قد لا تحتوي كل تفاصيل الوسائط
+  /// (فيديو/صوت/صور)، بعكس استجابة تفاصيل المنشور المفرد.
+  Future<Post> getPostById(int id, {bool forceRefresh = false}) async {
     try {
-      // محاولة البحث في الكاش أولاً
-      final cachedPost = _findPostInCache(id);
-      if (cachedPost != null) {
-        print('📦 Found post $id in cache');
-        return cachedPost;
+      if (!forceRefresh) {
+        // محاولة البحث في الكاش أولاً (فقط عند عدم طلب تحديث إجباري)
+        final cachedPost = _findPostInCache(id);
+        if (cachedPost != null) {
+          print('📦 Found post $id in cache');
+          return cachedPost;
+        }
       }
 
       print('🔄 Fetching post $id from API...');
       final response = await _dio.get('${ApiConstants.adminPosts}/$id');
-      final post = Post.fromJson(response.data);
+      final post = Post.fromJson(response.data['data'] ?? response.data);
 
       // تحديث الكاش إذا وجد المنشور في صفحة مخزنة
       _updatePostInCache(post);

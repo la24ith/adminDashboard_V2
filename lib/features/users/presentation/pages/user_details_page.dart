@@ -1624,7 +1624,7 @@ class _UserDetailsPageState extends State<UserDetailsPage>
     final controller = _getUsersController();
     final success = await controller.toggleUserStatus(
       user['id'].toString(),
-      user['is_active'] ?? false,
+      _isActive,
     );
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -1645,7 +1645,7 @@ class _UserDetailsPageState extends State<UserDetailsPage>
     final controller = _getUsersController();
     final success = await controller.toggleMultiDevice(
       user['id'].toString(),
-      user['is_multi_device'] ?? false,
+      _isMultiDevice,
     );
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -1666,7 +1666,7 @@ class _UserDetailsPageState extends State<UserDetailsPage>
     final controller = _getUsersController();
     final success = await controller.toggleScreenshot(
       user['id'],
-      user['can_screenshot'] ?? false,
+      _canScreenshot,
     );
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
@@ -32,6 +33,14 @@ class _PostFormPageState extends State<PostFormPage>
   bool _scheduleLater = false;
   // ✅ حُذف _isSaving المحلي — نعتمد على controller.isActionInProgress فقط
   String _selectedSegment = 'general';
+
+  // ✅ ScrollController دائم (بدل إنشاء واحد جديد بكل build) لنتمكن من
+  // التمرير برمجياً لأعلى عند ظهور خطأ جديد
+  final ScrollController _scrollController = ScrollController();
+
+  // لتتبّع آخر رسالة خطأ ومعرفة متى يظهر خطأ "جديد" فعلاً
+  String? _lastError;
+  Timer? _errorAutoHideTimer;
 
   // Media files
   File? _thumbnailFile;
@@ -84,12 +93,42 @@ class _PostFormPageState extends State<PostFormPage>
   }
 
   void _onControllerChanged() {
-    if (mounted) setState(() {});
+    if (!mounted) return;
+
+    final currentError = widget.controller.error;
+
+    // خطأ جديد ظهر (مختلف عن آخر خطأ عرضناه): نمرر لأعلى الشاشة تلقائياً
+    // ونشغّل مؤقت إخفاء تلقائي حتى لا يبقى البانر معلقاً للأبد
+    if (currentError != null && currentError != _lastError) {
+      _scrollToTop();
+      _startErrorAutoHideTimer();
+    }
+    _lastError = currentError;
+
+    setState(() {});
+  }
+
+  void _scrollToTop() {
+    if (!_scrollController.hasClients) return;
+    _scrollController.animateTo(
+      0,
+      duration: const Duration(milliseconds: 450),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
+  void _startErrorAutoHideTimer() {
+    _errorAutoHideTimer?.cancel();
+    _errorAutoHideTimer = Timer(const Duration(seconds: 6), () {
+      if (mounted) widget.controller.clearError();
+    });
   }
 
   @override
   void dispose() {
     widget.controller.removeListener(_onControllerChanged);
+    _errorAutoHideTimer?.cancel();
+    _scrollController.dispose();
     _titleController.dispose();
     _contentController.dispose();
     _animationController.dispose();
@@ -108,7 +147,7 @@ class _PostFormPageState extends State<PostFormPage>
         child: Stack(
           children: [
             CustomScrollView(
-              controller: ScrollController(),
+              controller: _scrollController,
               slivers: [
                 PostHeaderSection(
                   isEditing: widget.post != null,
@@ -125,8 +164,6 @@ class _PostFormPageState extends State<PostFormPage>
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const SizedBox(height: 8),
-                            _buildErrorWidget(),
                             const SizedBox(height: 8),
                             PostBasicInfoSection(
                               titleController: _titleController,
@@ -216,6 +253,33 @@ class _PostFormPageState extends State<PostFormPage>
                     widget.controller.isUploadingMedia('video') ||
                     widget.controller.isUploadingMedia('audio'),
                 onSave: _save,
+              ),
+            ),
+            // ✅ بانر خطأ عائم ثابت أعلى الشاشة: مستقل تماماً عن موضع
+            // السكرول، فيظهر فوراً للمستخدم أينما كان في النموذج
+            // بدل الحاجة للتمرير لأعلى ليراه.
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: SafeArea(
+                bottom: false,
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 300),
+                  transitionBuilder: (child, animation) => SlideTransition(
+                    position: Tween<Offset>(
+                      begin: const Offset(0, -1),
+                      end: Offset.zero,
+                    ).animate(CurvedAnimation(
+                      parent: animation,
+                      curve: Curves.easeOutCubic,
+                    )),
+                    child: FadeTransition(opacity: animation, child: child),
+                  ),
+                  child: widget.controller.error != null
+                      ? _buildErrorBanner(widget.controller.error!)
+                      : const SizedBox.shrink(key: ValueKey('no-error')),
+                ),
               ),
             ),
           ],
@@ -339,19 +403,25 @@ class _PostFormPageState extends State<PostFormPage>
     );
   }
 
-  Widget _buildErrorWidget() {
-    if (widget.controller.error == null) return const SizedBox.shrink();
-
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 300),
-      curve: Curves.easeOutCubic,
+  Widget _buildErrorBanner(String message) {
+    return Container(
+      key: ValueKey(message),
+      margin: const EdgeInsets.fromLTRB(16, 8, 16, 0),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: AppColors.errorLight,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: AppColors.error.withOpacity(0.2)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.12),
+            blurRadius: 16,
+            offset: const Offset(0, 6),
+          ),
+        ],
       ),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
             padding: const EdgeInsets.all(8),
@@ -365,12 +435,16 @@ class _PostFormPageState extends State<PostFormPage>
           const SizedBox(width: 12),
           Expanded(
             child: Text(
-              widget.controller.error!,
+              message,
               style: const TextStyle(color: AppColors.error, fontSize: 13),
             ),
           ),
+          const SizedBox(width: 8),
           GestureDetector(
-            onTap: () => widget.controller.clearError(),
+            onTap: () {
+              _errorAutoHideTimer?.cancel();
+              widget.controller.clearError();
+            },
             child: Container(
               padding: const EdgeInsets.all(6),
               decoration: BoxDecoration(

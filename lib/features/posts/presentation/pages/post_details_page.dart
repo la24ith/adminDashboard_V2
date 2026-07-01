@@ -1,11 +1,16 @@
 // lib/features/posts/presentation/pages/post_details_page.dart
+import 'dart:io';
 import 'package:admin_dashboard/core/constants/api_constants.dart';
 import 'package:admin_dashboard/core/constants/app_colors.dart';
 import 'package:admin_dashboard/features/posts/data/models/post_model.dart';
+import 'package:admin_dashboard/core/services/auth_service.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:video_player/video_player.dart';
 import 'package:just_audio/just_audio.dart';
+import '../../../../core/network/dio_client.dart';
 
 class PostDetailsPage extends StatefulWidget {
   final Post post;
@@ -31,11 +36,61 @@ class _PostDetailsPageState extends State<PostDetailsPage> {
   String? _currentAudioUrl;
   // ✅ لتتبع حالة الصوت بعد التهيئة
   bool _audioReady = false;
+  // ✅ إصلاح: لإظهار مؤشر تحميل أثناء تنزيل الملف الصوتي عند أول ضغط
+  // على زر التشغيل (كان المستخدم يضغط ولا يحدث شيء ظاهر لعدة ثوانٍ).
+  bool _isAudioLoading = false;
+  // ✅ إصلاح: لعدم استدعاء seek() في كل تحريك بسيط أثناء سحب سلايدر
+  // الصوت (كان يستدعي seek على كل onChanged، مما يسبب أداءً ضعيفاً
+  // وتقطيعاً أثناء السحب). القيمة الفعلية لا تُطبّق إلا عند الإفلات.
+  double? _audioDragSeconds;
+  // ✅ إصلاح جوهري: هذه هي الهيدرز الحقيقية المستخدَمة لكل الوسائط
+  // (فيديو + صورة مصغّرة + تحميل الصوت). تُبنى من AuthService.getToken()
+  // مباشرة — أي نفس المصدر الذي يقرأ منه DioClient.onRequest التوكن —
+  // بدل قراءتها (خطأً) من DioClient.instance.options.headers التي لا
+  // تحتوي على Authorization أبداً لأنه يُضاف ديناميكياً عبر Interceptor.
+  Map<String, String> _mediaHeaders = const {};
 
   @override
   void initState() {
     super.initState();
-    _initVideo();
+    _loadMediaHeadersThenInitVideo();
+  }
+
+  Future<void> _loadMediaHeadersThenInitVideo() async {
+    _mediaHeaders = await _authHeaders();
+    if (!mounted) return;
+    // نعيد البناء الآن حتى تحصل الصورة المصغّرة (CachedNetworkImage)
+    // على الهيدرز الصحيحة أيضاً، ثم نهيّئ الفيديو.
+    setState(() {});
+    await _initVideo();
+  }
+
+  // ✅ إصلاح: إن أُعيد استخدام نفس الصفحة (نفس الـ State) لمنشور آخر
+  // (مثلاً عبر PageView أو Navigator.pushReplacement مع نفس الـ key)،
+  // كان الفيديو/الصوت القديم يبقى معروضاً لأن initState لا يُستدعى مجدداً.
+  @override
+  void didUpdateWidget(covariant PostDetailsPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.post.id != widget.post.id) {
+      _videoController?.removeListener(_videoListener);
+      _videoController?.dispose();
+      _videoController = null;
+      _videoReady = false;
+      _videoError = null;
+      _isVideoPlaying = false;
+      _videoPosition = Duration.zero;
+      _videoDuration = Duration.zero;
+
+      _audioPlayer?.dispose();
+      _audioPlayer = null;
+      _audioReady = false;
+      _isAudioPlaying = false;
+      _currentAudioUrl = null;
+      _audioPosition = Duration.zero;
+      _audioDuration = Duration.zero;
+
+      _initVideo();
+    }
   }
 
   Future<void> _initVideo() async {
@@ -46,7 +101,17 @@ class _PostDetailsPageState extends State<PostDetailsPage> {
     try {
       debugPrint('🎬 VIDEO URL = $videoUrl');
 
-      final controller = VideoPlayerController.networkUrl(Uri.parse(videoUrl));
+      // ✅ إصلاح جوهري: video_player لا يستخدم Dio ولا يرسل تلقائياً
+      // رأس Authorization المطلوب للوصول لملفات الوسائط المحمية.
+      // نستخدم _mediaHeaders المحمّلة مسبقاً من AuthService.getToken()
+      // مباشرة (نفس مصدر التوكن الذي يقرأه DioClient.onRequest).
+      final headers =
+          _mediaHeaders.isNotEmpty ? _mediaHeaders : await _authHeaders();
+
+      final controller = VideoPlayerController.networkUrl(
+        Uri.parse(videoUrl),
+        httpHeaders: headers,
+      );
       await controller.initialize();
 
       controller.addListener(_videoListener);
@@ -67,6 +132,25 @@ class _PostDetailsPageState extends State<PostDetailsPage> {
         setState(() => _videoError = 'فشل تحميل الفيديو: ${e.toString()}');
       }
     }
+  }
+
+  /// يبني رؤوس المصادقة (Authorization) لملفات الوسائط المحمية،
+  /// بجلب التوكن مباشرة من AuthService — وهو نفس المصدر الذي يقرأه
+  /// DioClient داخل onRequest Interceptor. (سابقاً كانت هذه الدالة
+  /// تقرأ من DioClient.instance.options.headers، وهي لا تحتوي أبداً
+  /// على Authorization لأنه يُضاف ديناميكياً في كل طلب من داخل
+  /// الـ Interceptor وليس ضمن BaseOptions الثابتة).
+  Future<Map<String, String>> _authHeaders() async {
+    final headers = <String, String>{
+      'Accept': 'application/json',
+    };
+    final token = await AuthService.getToken();
+    if (token != null && token.isNotEmpty) {
+      headers['Authorization'] = 'Bearer $token';
+    } else {
+      debugPrint('⚠️ [media auth] لا يوجد توكن من AuthService.getToken()!');
+    }
+    return headers;
   }
 
   void _videoListener() {
@@ -91,7 +175,14 @@ class _PostDetailsPageState extends State<PostDetailsPage> {
     _audioReady = false;
 
     try {
-      await _audioPlayer!.setUrl(url);
+      // ✅ إصلاح جوهري: نفس مشكلة الفيديو — just_audio.setUrl() لا يرسل
+      // رأس Authorization بشكل موثوق لملف محمي. نحمّل الملف محلياً أولاً
+      // عبر Dio (الذي يرفق رأس المصادقة تلقائياً لكل طلباته)، ثم نشغّله
+      // من القرص — تمامًا كما يفعل تطبيق المستخدم الذي يعمل بنجاح.
+      final localPath = await _downloadAudioWithAuth(url);
+      if (!mounted) return;
+
+      await _audioPlayer!.setFilePath(localPath);
 
       // ✅ إصلاح: الاستماع لـ durationStream بدلاً من قراءة duration مرة واحدة
       _audioPlayer!.durationStream.listen((duration) {
@@ -119,8 +210,69 @@ class _PostDetailsPageState extends State<PostDetailsPage> {
         });
       }
     } catch (e) {
-      debugPrint('Error loading audio: $e');
+      debugPrint('❌ Error loading audio: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('تعذر تحميل الملف الصوتي')),
+        );
+      }
     }
+  }
+
+  /// يحمّل الملف الصوتي محلياً باستخدام Dio (يرفق رأس Authorization
+  /// تلقائياً)، مع تخزينه مؤقتاً حتى لا يُعاد تحميله في كل مرة.
+  Future<String> _downloadAudioWithAuth(String url) async {
+    final dir = await getTemporaryDirectory();
+    // ✅ إصلاح: سابقاً كان الكاش يعتمد على hash للرابط الكامل بما فيه
+    // expires وsignature، وهذان يتغيّران في كل مرة يُعاد فيها توليد
+    // الرابط الموقّع من الباك اند (حتى لو كان نفس الملف تماماً)، فكان
+    // الكاش لا يُستخدم فعلياً أبداً ويتراكم ملف جديد على القرص في كل
+    // مرة. الآن نعتمد فقط على مسار الرابط (بدون query) كمفتاح ثابت.
+    final stablePath = Uri.tryParse(url)?.path ?? url;
+    final cacheFile =
+        File('${dir.path}/admin_post_audio_${stablePath.hashCode.abs()}.mp3');
+
+    if (await cacheFile.exists()) {
+      final size = await cacheFile.length();
+      // ✅ إصلاح: كان أي ملف كاش موجود يُستخدم مباشرة بلا تحقق — حتى
+      // لو كان في الأصل رسالة خطأ JSON (مثل UNAUTHENTICATED) محفوظة
+      // خطأً كملف .mp3 (انظر الشرح أدناه). رسائل الخطأ عادة أقل من
+      // 2KB بينما أي ملف صوتي حقيقي أكبر من ذلك بكثير.
+      if (size > 2048) {
+        debugPrint('📦 Using cached audio: ${cacheFile.path}');
+        return cacheFile.path;
+      }
+      debugPrint('🗑️ حذف كاش صوتي فاسد/مشبوه (حجمه $size بايت فقط)');
+      await cacheFile.delete();
+    }
+
+    debugPrint('⬇️ Downloading audio with auth headers: $url');
+    final response = await DioClient.instance.get<List<int>>(
+      url,
+      options: Options(responseType: ResponseType.bytes),
+    );
+
+    // ✅ إصلاح جوهري: DioClient مضبوط بـ validateStatus للسماح بأي
+    // status أقل من 500، لذا لا يرمي Dio استثناءً عند 401/403/404.
+    // بدون هذا التحقق، كانت بايتات رسالة خطأ JSON (UNAUTHENTICATED)
+    // تُكتب مباشرة كملف .mp3 على القرص فيفشل ExoPlayer عند تشغيله
+    // بخطأ "None of the available extractors could read the stream" —
+    // بالضبط ما شاهدناه في اللوق.
+    if (response.statusCode != 200) {
+      throw Exception(
+        'فشل تحميل الملف الصوتي (HTTP ${response.statusCode}): '
+        '${response.data}',
+      );
+    }
+
+    final bytes = response.data;
+    if (bytes == null || bytes.isEmpty) {
+      throw Exception('استجابة فارغة أثناء تحميل الملف الصوتي');
+    }
+
+    await cacheFile.writeAsBytes(bytes);
+    debugPrint('✅ Audio saved: ${cacheFile.path} (${bytes.length} bytes)');
+    return cacheFile.path;
   }
 
   @override
@@ -249,7 +401,11 @@ class _PostDetailsPageState extends State<PostDetailsPage> {
           children: [
             if (widget.post.hasThumbnail)
               CachedNetworkImage(
-                imageUrl: ApiConstants.processImageUrl(widget.post.thumbnail!),
+                imageUrl: ApiConstants.mediaUrl(widget.post.thumbnail!),
+                // ✅ إصلاح: كانت الصورة المصغّرة تُطلب بدون أي Header
+                // للمصادقة إطلاقاً، فتفشل بنفس خطأ UNAUTHENTICATED الذي
+                // كان يظهر مع الفيديو.
+                httpHeaders: _mediaHeaders,
                 fit: BoxFit.cover,
                 placeholder: (context, url) => Container(
                   color: isDark ? Colors.grey[900] : Colors.grey[200],
@@ -505,6 +661,14 @@ class _PostDetailsPageState extends State<PostDetailsPage> {
                                 : _videoPosition.inMilliseconds.clamp(
                                         0, _videoDuration.inMilliseconds) /
                                     _videoDuration.inMilliseconds,
+                            // ✅ إصلاح: بدون هذا، كان _videoListener يستمر
+                            // بتحديث _videoPosition من التشغيل الفعلي أثناء
+                            // سحب المستخدم للسلايدر (لأن _isSeeking لم يكن
+                            // يُضبط إلا عند onChangeEnd فقط)، فيسبب "قفز"
+                            // مزعج في السلايدر أثناء السحب.
+                            onChangeStart: (value) {
+                              _isSeeking = true;
+                            },
                             onChanged: (value) {
                               final target = Duration(
                                 milliseconds:
@@ -617,7 +781,7 @@ class _PostDetailsPageState extends State<PostDetailsPage> {
                 ),
               ),
               GestureDetector(
-                onTap: () => _toggleAudio(audioUrl),
+                onTap: _isAudioLoading ? null : () => _toggleAudio(audioUrl),
                 child: Container(
                   width: 50,
                   height: 50,
@@ -634,11 +798,19 @@ class _PostDetailsPageState extends State<PostDetailsPage> {
                       ),
                     ],
                   ),
-                  child: Icon(
-                    _isAudioPlaying ? Icons.pause : Icons.play_arrow,
-                    color: Colors.white,
-                    size: 28,
-                  ),
+                  child: _isAudioLoading
+                      ? const Padding(
+                          padding: EdgeInsets.all(14),
+                          child: CircularProgressIndicator(
+                            color: Colors.white,
+                            strokeWidth: 2.4,
+                          ),
+                        )
+                      : Icon(
+                          _isAudioPlaying ? Icons.pause : Icons.play_arrow,
+                          color: Colors.white,
+                          size: 28,
+                        ),
                 ),
               ),
             ],
@@ -657,16 +829,25 @@ class _PostDetailsPageState extends State<PostDetailsPage> {
                 ),
                 Expanded(
                   child: Slider(
-                    value: _audioDuration.inSeconds == 0
-                        ? 0
-                        : _audioPosition.inSeconds
-                            .clamp(0, _audioDuration.inSeconds)
-                            .toDouble(),
+                    // ✅ إصلاح: أثناء السحب نعرض القيمة المحلية
+                    // (_audioDragSeconds) بدلاً من الموضع الفعلي، لتفادي
+                    // "تقطيع" الحركة الناتج عن استدعاء seek() في كل
+                    // إطار من السحب.
+                    value: _audioDragSeconds ??
+                        (_audioDuration.inSeconds == 0
+                            ? 0
+                            : _audioPosition.inSeconds
+                                .clamp(0, _audioDuration.inSeconds)
+                                .toDouble()),
                     max: _audioDuration.inSeconds > 0
                         ? _audioDuration.inSeconds.toDouble()
                         : 1.0,
                     onChanged: (value) {
+                      setState(() => _audioDragSeconds = value);
+                    },
+                    onChangeEnd: (value) {
                       _audioPlayer?.seek(Duration(seconds: value.toInt()));
+                      setState(() => _audioDragSeconds = null);
                     },
                     activeColor: Colors.teal,
                     inactiveColor: isDark
@@ -700,7 +881,17 @@ class _PostDetailsPageState extends State<PostDetailsPage> {
   }
 
   void _toggleAudio(String url) async {
+    // إذا كان الصوت جاهزاً مسبقاً لنفس الرابط، لا حاجة لإظهار التحميل
+    final needsInit = _audioPlayer == null || _currentAudioUrl != url;
+    if (needsInit && mounted) {
+      setState(() => _isAudioLoading = true);
+    }
+
     await _initAudio(url);
+
+    if (mounted) {
+      setState(() => _isAudioLoading = false);
+    }
     if (_audioPlayer == null) return;
 
     if (_isAudioPlaying) {
@@ -718,7 +909,14 @@ class _PostDetailsPageState extends State<PostDetailsPage> {
   }
 
   String _getFileNameFromUrl(String url) {
-    return url.split('/').last;
+    // ✅ إصلاح: كان يستخدم url.split('/').last مباشرة، وبما أن روابط
+    // signed-media تحتوي على query params (?expires=...&signature=...)
+    // كان الاسم الظاهر للمستخدم يتضمن كل هذا النص العشوائي بدلاً من
+    // اسم/معرّف الملف فقط. نستخدم Uri.path لتجاهل الـ query تماماً.
+    final uri = Uri.tryParse(url);
+    final path = uri?.path ?? url;
+    final segments = path.split('/').where((s) => s.isNotEmpty).toList();
+    return segments.isNotEmpty ? segments.last : url;
   }
 
   Color _statusColor() {

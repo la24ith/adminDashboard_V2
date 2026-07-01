@@ -210,7 +210,7 @@ class _PostCardState extends State<PostCard>
       );
     }
 
-    final fullUrl = ApiConstants.processImageUrl(url);
+    final fullUrl = ApiConstants.mediaUrl(url);
     return AnimatedContainer(
       duration: const Duration(milliseconds: 300),
       height: 180,
@@ -574,7 +574,7 @@ class _PostCardState extends State<PostCard>
     try {
       fullPost = widget.onFetchDetails != null
           ? await widget.onFetchDetails!(post.id)
-          : await _postRepository.getPostById(post.id);
+          : await _postRepository.getPostById(post.id, forceRefresh: true);
     } catch (e) {
       debugPrint(
           '⚠️ فشل جلب تفاصيل المنشور ${post.id}، سيتم عرض البيانات المتوفرة محلياً: $e');

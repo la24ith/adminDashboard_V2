@@ -4,6 +4,7 @@ import 'package:admin_dashboard/core/constants/api_constants.dart';
 import 'package:admin_dashboard/features/users/domain/entities/weight_entity.dart';
 import 'package:dartz/dartz.dart';
 import 'package:dio/dio.dart';
+import 'package:flutter/material.dart';
 
 import '../../domain/entities/user_entity.dart';
 import '../../domain/entities/subscription_entity.dart';
@@ -584,6 +585,8 @@ class UserRepositoryImpl implements UserRepository {
         '/api/admin/users/$userId/screenshot-permission',
         data: {'can_screenshot': !currentStatus},
       );
+      debugPrint('Response status code: ${response.statusCode}');
+      debugPrint('سكرييييييين شوت: ${response.data}');
 
       if (response.statusCode != 200) {
         return Left(Failure(
@@ -592,7 +595,8 @@ class UserRepositoryImpl implements UserRepository {
         ));
       }
 
-      if (enableCache) await localDataSource.clearCache(); // ✅ FIX: مسح الكاش بعد التغيير
+      if (enableCache)
+        await localDataSource.clearCache(); // ✅ FIX: مسح الكاش بعد التغيير
       return const Right(null);
     } on DioException catch (e) {
       return Left(Failure(
@@ -608,7 +612,8 @@ class UserRepositoryImpl implements UserRepository {
   Future<Either<Failure, void>> deleteUser(int userId) async {
     try {
       await dio.delete('/api/admin/users/$userId');
-      if (enableCache) await localDataSource.clearCache(); // ✅ FIX: مسح الكاش بعد الحذف
+      if (enableCache)
+        await localDataSource.clearCache(); // ✅ FIX: مسح الكاش بعد الحذف
       return const Right(null);
     } on DioException catch (e) {
       return Left(Failure(

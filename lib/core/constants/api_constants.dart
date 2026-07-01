@@ -57,7 +57,7 @@ class ApiConstants {
   static const int maxVideoSizeMB = 50;
   static const int maxAudioSizeMB = 15;
   static const int imageQuality = 75;
-  static String mediaUrl(String? path) {
+  /* static String mediaUrl(String? path) {
     if (path == null || path.isEmpty) return '';
 
     if (path.startsWith('http')) return path;
@@ -68,9 +68,9 @@ class ApiConstants {
         path.replaceAll(RegExp(r'^/'), '').replaceAll(RegExp(r'^storage/'), '');
 
     return '$cleanBase/storage/$cleanPath';
-  }
+  }*/
 
-  static String processImageUrl(String url) {
+  static String mediaUrl(String url) {
     final uri = Uri.tryParse(url);
 
     if (uri == null) return url;

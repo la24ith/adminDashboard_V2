@@ -23,25 +23,40 @@ class _NotificationFormPageState extends State<NotificationFormPage> {
   late int _validityDays;
   late List<String> _targetTypes;
   late String _type;
-  late String _targetType;
+  String _targetType = 'all';
   bool _isLoading = false;
   bool _isSaving = false;
   String? _errorMessage;
   bool _isScheduled = true;
 
-  final List<String> _typeOptions = ['info', 'warning', 'success', 'error', 'reminder'];
+  final List<String> _typeOptions = [
+    'info',
+    'warning',
+    'success',
+    'error',
+    'reminder'
+  ];
   final List<String> _targetTypeOptions = ['all', 'specific', 'role_based'];
-  final List<String> _targetAudienceOptions = ['الجميع', 'مرضى السكري', 'الأشبال', 'نشطين', 'غير نشطين'];
+  final List<String> _targetAudienceOptions = [
+    'الجميع',
+    'مرضى السكري',
+    'الأشبال',
+    'نشطين',
+    'غير نشطين'
+  ];
 
   @override
   void initState() {
     super.initState();
-    _titleController = TextEditingController(text: widget.notification?['title'] ?? '');
-    _messageController = TextEditingController(text: widget.notification?['message'] ?? '');
+    _titleController =
+        TextEditingController(text: widget.notification?['title'] ?? '');
+    _messageController =
+        TextEditingController(text: widget.notification?['message'] ?? '');
 
     final isAlreadySent = widget.notification?['sent_at'] != null ||
         (widget.notification?['send_at'] != null &&
-            DateTime.parse(widget.notification!['send_at']).isBefore(DateTime.now()));
+            DateTime.parse(widget.notification!['send_at'])
+                .isBefore(DateTime.now()));
 
     if (widget.notification?['send_at'] != null && !isAlreadySent) {
       _sendDate = DateTime.parse(widget.notification!['send_at']);
@@ -68,12 +83,18 @@ class _NotificationFormPageState extends State<NotificationFormPage> {
 
   String _getTypeLabel(String type) {
     switch (type) {
-      case 'info': return 'معلومات';
-      case 'warning': return 'تحذير';
-      case 'success': return 'نجاح';
-      case 'error': return 'خطأ';
-      case 'reminder': return 'تذكير';
-      default: return type;
+      case 'info':
+        return 'معلومات';
+      case 'warning':
+        return 'تحذير';
+      case 'success':
+        return 'نجاح';
+      case 'error':
+        return 'خطأ';
+      case 'reminder':
+        return 'تذكير';
+      default:
+        return type;
     }
   }
 
@@ -99,7 +120,10 @@ class _NotificationFormPageState extends State<NotificationFormPage> {
           if (_isLoading)
             const Padding(
               padding: EdgeInsets.all(14),
-              child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)),
+              child: SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2)),
             ),
         ],
       ),
@@ -122,15 +146,17 @@ class _NotificationFormPageState extends State<NotificationFormPage> {
                     children: [
                       const Icon(Icons.error_outline, color: AppColors.error),
                       const SizedBox(width: 12),
-                      Expanded(child: Text(_errorMessage!, style: const TextStyle(color: AppColors.error))),
+                      Expanded(
+                          child: Text(_errorMessage!,
+                              style: const TextStyle(color: AppColors.error))),
                       IconButton(
-                        icon: const Icon(Icons.close, size: 16, color: AppColors.error),
+                        icon: const Icon(Icons.close,
+                            size: 16, color: AppColors.error),
                         onPressed: () => setState(() => _errorMessage = null),
                       ),
                     ],
                   ),
                 ),
-
               if (isReadOnly)
                 Container(
                   padding: const EdgeInsets.all(12),
@@ -143,11 +169,12 @@ class _NotificationFormPageState extends State<NotificationFormPage> {
                     children: [
                       Icon(Icons.info_outline, color: AppColors.warning),
                       SizedBox(width: 12),
-                      Expanded(child: Text('هذا الإشعار تم إرساله بالفعل، لا يمكن تعديله')),
+                      Expanded(
+                          child: Text(
+                              'هذا الإشعار تم إرساله بالفعل، لا يمكن تعديله')),
                     ],
                   ),
                 ),
-
               TextFormField(
                 controller: _titleController,
                 readOnly: isReadOnly,
@@ -156,10 +183,10 @@ class _NotificationFormPageState extends State<NotificationFormPage> {
                   prefixIcon: Icon(Icons.title),
                   border: OutlineInputBorder(),
                 ),
-                validator: (v) => v == null || v.isEmpty ? 'العنوان مطلوب' : null,
+                validator: (v) =>
+                    v == null || v.isEmpty ? 'العنوان مطلوب' : null,
               ),
               const SizedBox(height: 16),
-
               TextFormField(
                 controller: _messageController,
                 readOnly: isReadOnly,
@@ -170,40 +197,10 @@ class _NotificationFormPageState extends State<NotificationFormPage> {
                   border: OutlineInputBorder(),
                   alignLabelWithHint: true,
                 ),
-                validator: (v) => v == null || v.isEmpty ? 'نص الإشعار مطلوب' : null,
+                validator: (v) =>
+                    v == null || v.isEmpty ? 'نص الإشعار مطلوب' : null,
               ),
               const SizedBox(height: 16),
-
-              DropdownButtonFormField<String>(
-                value: _type,
-                decoration: const InputDecoration(
-                  labelText: 'نوع الإشعار',
-                  border: OutlineInputBorder(),
-                  prefixIcon: Icon(Icons.category),
-                ),
-                items: _typeOptions.map((type) => DropdownMenuItem(value: type, child: Text(_getTypeLabel(type)))).toList(),
-                onChanged: (value) => setState(() => _type = value!),
-                validator: (v) => v == null ? 'نوع الإشعار مطلوب' : null,
-              ),
-              const SizedBox(height: 16),
-
-              DropdownButtonFormField<String>(
-                value: _targetType,
-                decoration: const InputDecoration(
-                  labelText: 'نوع الاستهداف',
-                  border: OutlineInputBorder(),
-                  prefixIcon: Icon(Icons.people),
-                ),
-                items: const [
-                  DropdownMenuItem(value: 'all', child: Text('الكل')),
-                  DropdownMenuItem(value: 'specific', child: Text('محدد')),
-                  DropdownMenuItem(value: 'role_based', child: Text('حسب الدور')),
-                ],
-                onChanged: (value) => setState(() => _targetType = value!),
-                validator: (v) => v == null ? 'نوع الاستهداف مطلوب' : null,
-              ),
-              const SizedBox(height: 16),
-
               if (!isReadOnly)
                 Container(
                   padding: const EdgeInsets.all(12),
@@ -238,7 +235,8 @@ class _NotificationFormPageState extends State<NotificationFormPage> {
                               onChanged: (value) {
                                 setState(() {
                                   _isScheduled = true;
-                                  _sendDate = DateTime.now().add(const Duration(hours: 1));
+                                  _sendDate = DateTime.now()
+                                      .add(const Duration(hours: 1));
                                 });
                               },
                               activeColor: AppColors.accent,
@@ -269,8 +267,11 @@ class _NotificationFormPageState extends State<NotificationFormPage> {
                               if (time != null) {
                                 setState(() {
                                   _sendDate = DateTime(
-                                    date.year, date.month, date.day,
-                                    time.hour, time.minute,
+                                    date.year,
+                                    date.month,
+                                    date.day,
+                                    time.hour,
+                                    time.minute,
                                   );
                                 });
                               }
@@ -282,7 +283,8 @@ class _NotificationFormPageState extends State<NotificationFormPage> {
                           padding: const EdgeInsets.all(8),
                           child: Text(
                             '📌 سيتم إرسال الإشعار تلقائياً في التاريخ المحدد',
-                            style: TextStyle(fontSize: 12, color: AppColors.info),
+                            style:
+                                TextStyle(fontSize: 12, color: AppColors.info),
                           ),
                         ),
                       if (!_isScheduled)
@@ -290,17 +292,16 @@ class _NotificationFormPageState extends State<NotificationFormPage> {
                           padding: const EdgeInsets.all(8),
                           child: Text(
                             '⚡ سيتم إرسال الإشعار فوراً بعد الحفظ',
-                            style: TextStyle(fontSize: 12, color: AppColors.success),
+                            style: TextStyle(
+                                fontSize: 12, color: AppColors.success),
                           ),
                         ),
                     ],
                   ),
                 ),
               const SizedBox(height: 16),
-
               DropdownButtonFormField<int>(
                 value: _validityDays,
-            
                 decoration: const InputDecoration(
                   labelText: 'مدة الصلاحية (بالأيام)',
                   border: OutlineInputBorder(),
@@ -315,12 +316,13 @@ class _NotificationFormPageState extends State<NotificationFormPage> {
                 onChanged: (value) => setState(() => _validityDays = value!),
               ),
               const SizedBox(height: 16),
-
               if (_targetType == 'specific' && !isReadOnly)
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('الفئة المستهدفة', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+                    const Text('الفئة المستهدفة',
+                        style: TextStyle(
+                            fontSize: 14, fontWeight: FontWeight.w500)),
                     const SizedBox(height: 8),
                     Wrap(
                       spacing: 8,
@@ -341,7 +343,8 @@ class _NotificationFormPageState extends State<NotificationFormPage> {
                                 }
                               } else {
                                 _targetTypes.remove(target);
-                                if (_targetTypes.isEmpty) _targetTypes = ['الجميع'];
+                                if (_targetTypes.isEmpty)
+                                  _targetTypes = ['الجميع'];
                               }
                             });
                           },
@@ -354,26 +357,31 @@ class _NotificationFormPageState extends State<NotificationFormPage> {
                   ],
                 ),
               const SizedBox(height: 32),
-
               Row(
                 children: [
                   Expanded(
                     child: OutlinedButton(
                       onPressed: () => Navigator.pop(context),
-                      style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 12)),
+                      style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 12)),
                       child: const Text('إلغاء'),
                     ),
                   ),
                   const SizedBox(width: 16),
                   Expanded(
                     child: ElevatedButton(
-                      onPressed: (_isLoading || _isSaving || isReadOnly) ? null : _save,
+                      onPressed: (_isLoading || _isSaving || isReadOnly)
+                          ? null
+                          : _save,
                       style: ElevatedButton.styleFrom(
                         padding: const EdgeInsets.symmetric(vertical: 12),
                         backgroundColor: AppColors.accent,
                       ),
                       child: _isLoading
-                          ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2))
                           : const Text('حفظ'),
                     ),
                   ),
@@ -400,7 +408,7 @@ class _NotificationFormPageState extends State<NotificationFormPage> {
     final Map<String, dynamic> notificationData = {
       'title': _titleController.text,
       'message': _messageController.text,
-      'type': _type,
+      'type': 'info',
       'target_type': _targetType,
       'validity_days': _validityDays,
     };
@@ -409,8 +417,10 @@ class _NotificationFormPageState extends State<NotificationFormPage> {
       if (_sendDate.isAfter(DateTime.now())) {
         notificationData['send_at'] = _sendDate.toIso8601String();
       } else {
-        notificationData['send_at'] = DateTime.now().add(const Duration(hours: 1)).toIso8601String();
-        setState(() => _sendDate = DateTime.now().add(const Duration(hours: 1)));
+        notificationData['send_at'] =
+            DateTime.now().add(const Duration(hours: 1)).toIso8601String();
+        setState(
+            () => _sendDate = DateTime.now().add(const Duration(hours: 1)));
       }
     }
 
