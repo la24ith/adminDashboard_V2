@@ -143,6 +143,12 @@ class Post extends Equatable {
   final DateTime updatedAt;
   final PostAuthor? author;
   final List<PostMedia> media;
+  // ✅ روابط الفيديو/الصوت الخام كما أرسلها الخادم مباشرة على المنشور
+  // (وليست عبر جدول media). تُستخدم عندما يُدخل المستخدم رابطاً بدل
+  // رفع ملف، لأن الخادم في هذه الحالة يحفظ الرابط في هذين الحقلين
+  // على المنشور نفسه ولا يُنشئ سجل media مطابق.
+  final String? videoUrlField;
+  final String? audioUrlField;
 
   const Post({
     required this.id,
@@ -161,10 +167,12 @@ class Post extends Equatable {
     required this.updatedAt,
     this.author,
     this.media = const [],
+    this.videoUrlField,
+    this.audioUrlField,
   });
 
-  bool get hasVideo => media.any((m) => m.isVideo);
-  bool get hasAudio => media.any((m) => m.isAudio);
+  bool get hasVideo => media.any((m) => m.isVideo) || videoUrl != null;
+  bool get hasAudio => media.any((m) => m.isAudio) || audioUrl != null;
   bool get hasImages => media.any((m) => m.isImage);
   bool get hasThumbnail => thumbnail != null && thumbnail!.isNotEmpty;
 
@@ -194,12 +202,18 @@ class Post extends Equatable {
 
   String? get videoUrl {
     final video = firstVideo;
-    return video?.filePath;
+    if (video != null) return video.filePath;
+    return (videoUrlField != null && videoUrlField!.isNotEmpty)
+        ? videoUrlField
+        : null;
   }
 
   String? get audioUrl {
     final audio = firstAudio;
-    return audio?.filePath;
+    if (audio != null) return audio.filePath;
+    return (audioUrlField != null && audioUrlField!.isNotEmpty)
+        ? audioUrlField
+        : null;
   }
 
   String _formatDate(DateTime date) => '${date.day}/${date.month}/${date.year}';
@@ -251,6 +265,10 @@ class Post extends Equatable {
       updatedAt: DateTime.parse(json['updated_at']),
       author: author,
       media: mediaList,
+      // ✅ قراءة الحقلين كما يعيدهما الخادم مباشرة على المنشور، بغض
+      // النظر عن اسم المفتاح المستخدم فعلياً في الاستجابة
+      videoUrlField: (json['video_url'] ?? json['videoUrl']) as String?,
+      audioUrlField: (json['audio_url'] ?? json['audioUrl']) as String?,
     );
   }
 
@@ -280,6 +298,8 @@ class Post extends Equatable {
         createdAt,
         updatedAt,
         author,
-        media
+        media,
+        videoUrlField,
+        audioUrlField,
       ];
 }

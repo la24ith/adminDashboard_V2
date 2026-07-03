@@ -100,7 +100,7 @@ class DashboardSidebar extends StatelessWidget {
             const SizedBox(width: 12),
             const Flexible(
               child: Text(
-                'WeightCare',
+                'لوحة التحكم',
                 style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.bold,

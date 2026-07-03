@@ -70,34 +70,48 @@ class ApiConstants {
     return '$cleanBase/storage/$cleanPath';
   }*/
 
+  /// يحوّل أي مسار/رابط وسائط قادم من الـ API إلى رابط كامل قابل للعرض:
+  ///  - رابط Google Drive → يُحوَّل لرابط thumbnail مباشر (أوثق من
+  ///    uc?export=view لعرض الصور داخل Image.network/CachedNetworkImage).
+  ///  - رابط كامل آخر (http/https) بما فيه signed-media → يُعاد كما هو.
+  ///  - مسار نسبي (public storage، مثل "post-media/13/x.jpg") → يُركَّب
+  ///    مع baseUrl + "/storage/". هذا هو شكل الصور دائماً بحسب تأكيد
+  ///    الباك اند: "Images continue using public /storage/... URLs"
+  ///    (بعكس الفيديو/الصوت المحميين اللذين يصلان كرابط signed-media
+  ///    كامل جاهز أصلاً، فلا يدخلان هذا الفرع إطلاقاً).
   static String mediaUrl(String url) {
+    if (url.isEmpty) return url;
+
     final uri = Uri.tryParse(url);
 
-    if (uri == null) return url;
+    // رابط كامل له scheme (http/https) بالفعل
+    if (uri != null && uri.hasScheme) {
+      final isGoogleDrive = uri.host.contains('drive.google.com') ||
+          uri.host.contains('docs.google.com');
 
-    // التحقق أنه رابط Google Drive
-    final isGoogleDrive = uri.host.contains('drive.google.com') ||
-        uri.host.contains('docs.google.com');
+      if (isGoogleDrive) {
+        final patterns = [
+          RegExp(r'/d/([a-zA-Z0-9_-]+)'),
+          RegExp(r'id=([a-zA-Z0-9_-]+)'),
+        ];
+        for (final pattern in patterns) {
+          final match = pattern.firstMatch(url);
+          if (match != null) {
+            final fileId = match.group(1)!;
+            return 'https://drive.google.com/thumbnail?id=$fileId&sz=w2000';
+          }
+        }
+      }
 
-    if (!isGoogleDrive) {
+      // رابط كامل عادي (signed-media، أو أي رابط خارجي آخر) → كما هو
       return url;
     }
 
-    // استخراج File ID
-    final patterns = [
-      RegExp(r'/d/([a-zA-Z0-9_-]+)'),
-      RegExp(r'id=([a-zA-Z0-9_-]+)'),
-    ];
-
-    for (final pattern in patterns) {
-      final match = pattern.firstMatch(url);
-      if (match != null) {
-        final fileId = match.group(1)!;
-        return 'https://drive.google.com/uc?export=view&id=$fileId';
-      }
-    }
-
-    return url;
+    // ✅ إصلاح: مسار نسبي بدون scheme (شكل الصور الحالي دائماً)
+    final cleanBase = baseUrl.replaceAll(RegExp(r'/$'), '');
+    final cleanPath =
+        url.replaceAll(RegExp(r'^/'), '').replaceAll(RegExp(r'^storage/'), '');
+    return '$cleanBase/storage/$cleanPath';
   }
 
   // ✅ دالة لإنشاء روابط بديلة (للمعاينة)

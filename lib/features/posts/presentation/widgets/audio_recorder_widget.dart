@@ -5,7 +5,10 @@ import 'package:flutter/material.dart';
 import 'package:record/record.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:file_picker/file_picker.dart';
 import '../../../../core/constants/app_colors.dart';
+import '../../../../core/constants/api_constants.dart';
+import '../../../../core/services/auth_service.dart';
 
 class AudioRecorderWidget extends StatefulWidget {
   final File? existingFile;
@@ -41,6 +44,9 @@ class _AudioRecorderWidgetState extends State<AudioRecorderWidget> {
   Timer? _recordTimer;
   Timer? _playbackTimer;
   String? _errorMessage;
+  // ✅ إصلاح: يظهر مؤشر تحميل أثناء جلب رابط الصوت الموقّع (signed URL)
+  // للملف الموجود مسبقاً، ويمنع الضغط على تشغيل قبل اكتمال التحميل.
+  bool _isLoadingRemoteAudio = false;
 
   // مستويات الصوت للتسجيل
   final List<double> _amplitudes = [];
@@ -57,6 +63,59 @@ class _AudioRecorderWidgetState extends State<AudioRecorderWidget> {
     } else if (widget.existingUrl != null && widget.existingUrl!.isNotEmpty) {
       // إذا كان هناك رابط موجود، نعرضه كملف تم رفعه مسبقاً
       _currentPath = widget.existingUrl;
+      // ✅ إصلاح جوهري: سابقاً كان الكود يكتفي بتخزين الرابط في
+      // _currentPath (فقط لإظهار واجهة "يوجد ملف صوتي") دون أن يحمّل
+      // الرابط فعلياً داخل AudioPlayer عبر setUrl/setFilePath. فكان
+      // زر التشغيل يستدعي _player.play() على مشغّل بلا مصدر صوت
+      // فلا يحدث شيء. رابط الصوت الحالي هو أيضاً رابط موقّع (signed)
+      // محمي على الباك اند ويتطلب Authorization Bearer token — بدونه
+      // يرجّع السيرفر FORBIDDEN (نفس الآلية المستخدمة للفيديو/الصوت
+      // في صفحة تفاصيل المنشور). لذلك نحمّله عبر _loadRemoteAudio().
+      _loadRemoteAudio(widget.existingUrl!);
+    }
+  }
+
+  /// يحمّل رابط صوت موجود مسبقاً على السيرفر داخل AudioPlayer، مع إرفاق
+  /// رأس Authorization لأن الرابط موقّع (signed) ومحمي. just_audio
+  /// يدعم تمرير الهيدرز مباشرة عبر setUrl(headers: ...) خلافاً لـ
+  /// setFilePath() المستخدمة فقط للملفات المحلية.
+  Future<void> _loadRemoteAudio(String url) async {
+    if (!mounted) return;
+    setState(() => _isLoadingRemoteAudio = true);
+
+    try {
+      final headers = <String, String>{'Accept': 'application/json'};
+      final token = await AuthService.getToken();
+      if (token != null && token.isNotEmpty) {
+        headers['Authorization'] = 'Bearer $token';
+      } else {
+        debugPrint('⚠️ [audio auth] لا يوجد توكن من AuthService.getToken()!');
+      }
+
+      await _player.setUrl(url, headers: headers);
+
+      if (!mounted) return;
+      _playbackDuration = _player.duration ?? Duration.zero;
+
+      _player.playbackEventStream.listen((event) {
+        if (mounted) {
+          setState(() {
+            _playbackDuration = _player.duration ?? Duration.zero;
+          });
+        }
+      });
+
+      setState(() {});
+    } catch (e) {
+      debugPrint('❌ Error loading remote audio: $e');
+      if (mounted) {
+        setState(() {
+          _errorMessage =
+              'تعذر تحميل الملف الصوتي الحالي (FORBIDDEN أو رابط منتهي)';
+        });
+      }
+    } finally {
+      if (mounted) setState(() => _isLoadingRemoteAudio = false);
     }
   }
 
@@ -216,6 +275,7 @@ class _AudioRecorderWidgetState extends State<AudioRecorderWidget> {
   }
 
   void _togglePlayback() {
+    if (_isLoadingRemoteAudio) return;
     if (_isPlaying) {
       _player.pause();
       _playbackTimer?.cancel();
@@ -287,6 +347,51 @@ class _AudioRecorderWidgetState extends State<AudioRecorderWidget> {
   Future<void> _reRecord() async {
     await _deleteAudio();
     await _startRecording();
+  }
+
+  /// اختيار ملف صوتي موجود مسبقاً من الهاتف (بدل تسجيله مباشرة)
+  Future<void> _pickAudioFile() async {
+    try {
+      final result = await FilePicker.platform.pickFiles(type: FileType.audio);
+      if (result == null || result.files.single.path == null) return;
+
+      final file = File(result.files.single.path!);
+
+      final sizeInMB = file.lengthSync() / (1024 * 1024);
+      if (sizeInMB > ApiConstants.maxAudioSizeMB) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                  '⚠️ حجم الملف كبير جداً (${sizeInMB.toStringAsFixed(1)} MB). الحد الأقصى ${ApiConstants.maxAudioSizeMB} MB'),
+              backgroundColor: Colors.red,
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12)),
+            ),
+          );
+        }
+        return;
+      }
+
+      _currentPath = file.path;
+      await _loadAudioFile(file.path);
+
+      if (!mounted) return;
+      setState(() {
+        _isRecording = false;
+        _errorMessage = null;
+      });
+
+      // تمرير الملف المختار إلى الوالد (نفس آلية التسجيل تماماً)
+      widget.onAudioChanged(file, null);
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _errorMessage = 'فشل اختيار الملف الصوتي: ${e.toString()}';
+        });
+      }
+    }
   }
 
   String _formatDuration(int seconds) {
@@ -620,12 +725,28 @@ class _AudioRecorderWidgetState extends State<AudioRecorderWidget> {
             ),
 
             // زر التشغيل/الإيقاف
-            _buildControlButton(
-              icon: _isPlaying ? Icons.pause : Icons.play_arrow,
-              onTap: _togglePlayback,
-              color: AppColors.primary,
-              isMain: true,
-            ),
+            _isLoadingRemoteAudio
+                ? Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: AppColors.primary,
+                      shape: BoxShape.circle,
+                    ),
+                    child: const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor: AlwaysStoppedAnimation(Colors.white),
+                      ),
+                    ),
+                  )
+                : _buildControlButton(
+                    icon: _isPlaying ? Icons.pause : Icons.play_arrow,
+                    onTap: _togglePlayback,
+                    color: AppColors.primary,
+                    isMain: true,
+                  ),
 
             // زر الحذف
             _buildControlButton(
@@ -643,23 +764,47 @@ class _AudioRecorderWidgetState extends State<AudioRecorderWidget> {
     return Center(
       child: Column(
         children: [
-          ElevatedButton.icon(
-            onPressed: _startRecording,
-            icon: const Icon(Icons.mic, size: 20),
-            label: const Text('اضغط للتسجيل'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.primary,
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 14),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(40),
+          Wrap(
+            spacing: 12,
+            runSpacing: 12,
+            alignment: WrapAlignment.center,
+            children: [
+              ElevatedButton.icon(
+                onPressed: _startRecording,
+                icon: const Icon(Icons.mic, size: 20),
+                label: const Text('اضغط للتسجيل'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: Colors.white,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(40),
+                  ),
+                  elevation: 0,
+                ),
               ),
-              elevation: 0,
-            ),
+              OutlinedButton.icon(
+                onPressed: _pickAudioFile,
+                icon:
+                    Icon(Icons.upload_file, size: 20, color: AppColors.primary),
+                label: const Text('رفع من الهاتف'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppColors.primary,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(40),
+                  ),
+                  side: BorderSide(color: AppColors.primary.withOpacity(0.5)),
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 12),
           Text(
-            'سجل مقطعاً صوتياً لإضافته إلى المنشور',
+            'سجل مقطعاً صوتياً أو ارفع ملفاً موجوداً لإضافته إلى المنشور',
+            textAlign: TextAlign.center,
             style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
           ),
         ],
