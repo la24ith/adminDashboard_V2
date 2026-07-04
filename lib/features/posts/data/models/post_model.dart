@@ -40,6 +40,12 @@ class PostMedia extends Equatable {
   final int sortOrder;
   final bool isDownloadable;
   final String createdAt;
+  // ✅ دعم الفيديو الخارجي (YouTube / Vimeo / Facebook)
+  // 'uploaded' = ملف مرفوع على الخادم (السلوك القديم دون تغيير)
+  // 'external' = رابط خارجي، لا يوجد ملف فعلي مخزّن لدى الخادم
+  final String sourceType;
+  final String? provider; // youtube | vimeo | facebook (فقط عند external)
+  final String? externalUrl; // الرابط الخارجي كما أرسله المستخدم
 
   const PostMedia({
     required this.id,
@@ -54,11 +60,19 @@ class PostMedia extends Equatable {
     required this.sortOrder,
     required this.isDownloadable,
     required this.createdAt,
+    this.sourceType = 'uploaded',
+    this.provider,
+    this.externalUrl,
   });
 
   bool get isImage => type == 'image';
   bool get isVideo => type == 'video';
   bool get isAudio => type == 'audio';
+  bool get isExternal => sourceType == 'external';
+  bool get isUploaded => sourceType != 'external';
+
+  /// الرابط الصالح للعرض/التشغيل بغض النظر عن مصدر الوسيط
+  String? get playableUrl => isExternal ? externalUrl : filePath;
 
   String get fileSizeFormatted {
     if (fileSize < 1024) return '$fileSize B';
@@ -90,11 +104,17 @@ class PostMedia extends Equatable {
       sortOrder: json['sort_order'] ?? 0,
       isDownloadable: json['is_downloadable'] ?? true,
       createdAt: json['created_at'] ?? '',
+      // ✅ يدعم الفيديو الخارجي: يُفترض 'uploaded' افتراضياً حتى تتوافق
+      // العناصر القديمة (قبل هذا التحديث) والتي لا ترسل source_type إطلاقاً
+      sourceType: json['source_type'] ?? 'uploaded',
+      provider: json['provider'],
+      externalUrl: json['external_url'],
     );
   }
 
   @override
-  List<Object?> get props => [id, postId, type, filePath];
+  List<Object?> get props =>
+      [id, postId, type, filePath, sourceType, provider, externalUrl];
 }
 
 class PostAuthor extends Equatable {
@@ -202,11 +222,19 @@ class Post extends Equatable {
 
   String? get videoUrl {
     final video = firstVideo;
-    if (video != null) return video.filePath;
+    // ✅ الفيديو الخارجي لا يملك filePath (file_url/url = null من الخادم)،
+    // الرابط الصالح للتشغيل عندها هو external_url
+    if (video != null) return video.playableUrl;
     return (videoUrlField != null && videoUrlField!.isNotEmpty)
         ? videoUrlField
         : null;
   }
+
+  /// هل الفيديو الحالي (إن وجد ضمن جدول media) خارجي (يوتيوب/فيميو/فيسبوك)؟
+  bool get isVideoExternal => firstVideo?.isExternal ?? false;
+
+  /// مزوّد الفيديو الخارجي إن وجد ('youtube' | 'vimeo' | 'facebook')
+  String? get videoProvider => firstVideo?.provider;
 
   String? get audioUrl {
     final audio = firstAudio;

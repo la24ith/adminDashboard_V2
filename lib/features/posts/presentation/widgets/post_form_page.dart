@@ -481,6 +481,10 @@ class _PostFormPageState extends State<PostFormPage>
         videoUrl: _videoUrl,
         audioFile: _audioFile,
         audioUrl: _audioUrl,
+        // ✅ إذا كان للمنشور عنصر فيديو مسبق (مرفوع أو خارجي) نمرر معرّفه
+        // حتى يتم تحديثه (PUT) بدل إنشاء عنصر مكرر عند تغيير الرابط
+        // الخارجي أو استبدال الفيديو المرفوع برابط خارجي.
+        existingVideoMediaId: widget.post?.firstVideo?.id,
       );
     } else {
       success = await widget.controller.createPost(

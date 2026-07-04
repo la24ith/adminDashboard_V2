@@ -223,6 +223,9 @@ class PostsController extends ChangeNotifier {
     String? thumbnailUrl,
     String? videoUrl,
     String? audioUrl,
+    // ✅ عند إنشاء منشور جديد لا يوجد وسيط سابق بعد، لذا يبقى null دائماً.
+    // أُبقي البارامتر هنا فقط للتوافق مع نفس توقيع updatePost.
+    int? existingVideoMediaId,
   }) async {
     if (_isActionInProgress || _isDisposed) return false;
 
@@ -258,6 +261,7 @@ class PostsController extends ChangeNotifier {
           videoUrl,
           audioFile,
           audioUrl,
+          existingVideoMediaId: existingVideoMediaId,
         );
       } catch (mediaError) {
         // ❗ فشل رفع أحد الملحقات: لا نترك منشوراً منشوراً بدون وسائطه.
@@ -312,6 +316,11 @@ class PostsController extends ChangeNotifier {
     String? thumbnailUrl,
     String? videoUrl,
     String? audioUrl,
+    // ✅ معرّف عنصر الفيديو الحالي (من جدول media) إن وُجد مسبقاً على
+    // هذا المنشور، سواء كان مرفوعاً أو خارجياً. يُستخدم لتحديد ما إذا
+    // كان يجب إنشاء عنصر فيديو خارجي جديد أم تحديث العنصر الموجود
+    // (PUT /api/admin/posts/media/{media_id}) بدل تكرار السجلات.
+    int? existingVideoMediaId,
   }) async {
     if (_isActionInProgress || _isDisposed) return false;
 
@@ -343,6 +352,7 @@ class PostsController extends ChangeNotifier {
           videoUrl,
           audioFile,
           audioUrl,
+          existingVideoMediaId: existingVideoMediaId,
         );
       } catch (mediaError) {
         // ❗ فشل رفع أحد الملحقات أثناء التحديث: لا نعرض رسالة نجاح
@@ -455,8 +465,9 @@ class PostsController extends ChangeNotifier {
     File? videoFile,
     String? videoUrl,
     File? audioFile,
-    String? audioUrl,
-  ) async {
+    String? audioUrl, {
+    int? existingVideoMediaId,
+  }) async {
     // رفع الصورة المصغرة
     if (thumbnailFile != null && !_isDisposed) {
       await _uploadMedia(postId, thumbnailFile, 'thumbnail');
@@ -470,14 +481,84 @@ class PostsController extends ChangeNotifier {
     if (videoFile != null && !_isDisposed) {
       await _uploadMedia(postId, videoFile, 'video');
     } else if (videoUrl != null && videoUrl.isNotEmpty && !_isDisposed) {
-      await _updatePostField(postId, 'video_url', videoUrl);
+      // ✅ التحديث الجديد: الفيديو الخارجي (يوتيوب/فيميو/فيسبوك) لم يعد
+      // يُرسل كحقل نصي على المنشور (video_url عبر PUT /posts/{id})، بل
+      // يُنشأ/يُحدَّث كعنصر ضمن جدول media حسب المواصفة الجديدة من الباك
+      // اند (POST أو PUT /api/admin/posts/media/{id} بصيغة JSON).
+      await _saveExternalVideo(
+        postId,
+        videoUrl,
+        existingMediaId: existingVideoMediaId,
+      );
     }
 
-    // رفع الصوت
+    // رفع الصوت (لا تغيير: الباك اند لا يدعم صوت خارجي حالياً)
     if (audioFile != null && !_isDisposed) {
       await _uploadMedia(postId, audioFile, 'audio');
     } else if (audioUrl != null && audioUrl.isNotEmpty && !_isDisposed) {
       await _updatePostField(postId, 'audio_url', audioUrl);
+    }
+  }
+
+  /// ينشئ عنصر فيديو خارجي جديد ضمن جدول media الخاص بالمنشور، أو يحدّث
+  /// العنصر الموجود مسبقاً (سواء كان مرفوعاً أو خارجياً) إذا تم تمرير
+  /// [existingMediaId] — هذا يغطي الحالتين:
+  /// - إضافة رابط فيديو خارجي لأول مرة (POST)
+  /// - تعديل رابط خارجي حالي، أو استبدال فيديو مرفوع برابط خارجي (PUT)
+  Future<void> _saveExternalVideo(
+    int postId,
+    String url, {
+    int? existingMediaId,
+  }) async {
+    if (_isDisposed) return;
+
+    _uploadingMedia['video'] = true;
+    _safeNotify();
+
+    final dio = DioClient.instance;
+    final data = {
+      'type': 'video',
+      'source_type': 'external',
+      'external_url': url,
+      if (existingMediaId == null) 'sort_order': 0,
+    };
+
+    try {
+      if (existingMediaId != null) {
+        // PUT /api/admin/posts/media/{media_id}
+        await dio.put(
+          '${ApiConstants.adminPosts}/media/$existingMediaId',
+          data: data,
+        );
+      } else {
+        // POST /api/admin/posts/{post_id}/media
+        final endpoint =
+            ApiConstants.replacePostId(ApiConstants.adminPostMedia, postId);
+        await dio.post(endpoint, data: data);
+      }
+      _showSnackBar('تم حفظ رابط الفيديو الخارجي بنجاح');
+    } on DioException catch (e) {
+      // ✅ 422 = رابط غير مدعوم أو غير صالح بحسب المواصفة الجديدة
+      String msg;
+      if (e.response?.statusCode == 422) {
+        final serverMsg = _extractServerMessage(e.response?.data);
+        msg = 'فشل حفظ رابط الفيديو: '
+            '${serverMsg.isNotEmpty ? serverMsg : 'الرابط غير مدعوم (يُقبل يوتيوب / فيميو / فيسبوك فقط)'}';
+      } else {
+        msg = _buildMediaErrorMessage(
+          statusCode: e.response?.statusCode,
+          responseData: e.response?.data,
+          type: 'video',
+          dioException: e,
+        );
+      }
+      _showSnackBar(msg, isError: true);
+      throw Exception(msg);
+    } finally {
+      if (!_isDisposed) {
+        _uploadingMedia['video'] = false;
+        _safeNotify();
+      }
     }
   }
 

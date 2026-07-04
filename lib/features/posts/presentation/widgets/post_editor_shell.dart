@@ -1,9 +1,9 @@
 // lib/features/posts/presentation/widgets/post_editor_shell.dart (Alternative)
 import 'package:admin_dashboard/features/posts/data/models/post_model.dart';
+import 'package:admin_dashboard/features/posts/presentation/widgets/post_form_page.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../state/posts_controller.dart';
-import 'post_form_page.dart';
 
 class PostEditorShell extends StatelessWidget {
   final Post? post;

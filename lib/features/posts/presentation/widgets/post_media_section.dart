@@ -97,6 +97,7 @@ class PostMediaSection extends StatelessWidget {
           onUrlSubmit: onVideoUrlSet,
           onClear: onVideoCleared,
         ),
+        _buildVideoLinkHint(),
         const SizedBox(height: 16),
         if (audioFile != null || audioUrl != null || true)
           Padding(
@@ -118,5 +119,104 @@ class PostMediaSection extends StatelessWidget {
           ),
       ],
     );
+  }
+
+  /// ✅ يدعم الآن السيرفر روابط فيديو خارجية (يوتيوب / فيميو / فيسبوك /
+  /// غوغل درايف) عبر جدول media بدل حقل video_url القديم. هذا العنصر
+  /// يعرض للمستخدم أي مزوّد تم اكتشافه من الرابط المُدخل، أو تنبيهاً
+  /// إذا الرابط غير مدعوم، بالإضافة إلى توضيح المزوّدات المسموحة.
+  /// ملاحظة: يوتيوب وغوغل درايف يُشغَّلان داخل التطبيق مباشرة عند
+  /// عرض المنشور؛ أما فيسبوك وفيميو فتتم محاولة تضمينهما داخلياً مع
+  /// فتح خارجي تلقائي عند تعذّر ذلك.
+  Widget _buildVideoLinkHint() {
+    if (videoFile != null) {
+      // فيديو مرفوع كملف: لا حاجة لأي تلميح عن روابط خارجية
+      return const SizedBox.shrink();
+    }
+
+    final url = videoUrl;
+    if (url == null || url.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(4, 6, 4, 0),
+        child: Text(
+          'يمكنك رفع ملف فيديو مباشرة، أو لصق رابط من يوتيوب / غوغل '
+          'درايف / فيميو / فيسبوك',
+          style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
+        ),
+      );
+    }
+
+    final provider = detectVideoProvider(url);
+
+    if (provider == null) {
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(4, 6, 4, 0),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(Icons.warning_amber_rounded,
+                size: 14, color: Colors.orange.shade700),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                'هذا الرابط قد لا يكون مدعوماً للتشغيل داخل التطبيق. '
+                'المزوّدات المدعومة حالياً: يوتيوب، غوغل درايف، فيميو، '
+                'وفيسبوك (روابط فيديو عامة فقط). سيُحاول التطبيق فتحه '
+                'خارجياً عند الحاجة.',
+                style: TextStyle(fontSize: 12, color: Colors.orange.shade800),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final providerLabel = {
+      'youtube': 'يوتيوب',
+      'google_drive': 'غوغل درايف',
+      'vimeo': 'فيميو',
+      'facebook': 'فيسبوك',
+    }[provider]!;
+
+    // ✅ يوتيوب وغوغل درايف مضمونا التشغيل داخل التطبيق نفسه
+    final playsInApp = provider == 'youtube' || provider == 'google_drive';
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(4, 6, 4, 0),
+      child: Row(
+        children: [
+          Icon(Icons.check_circle, size: 14, color: Colors.green.shade600),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              playsInApp
+                  ? 'رابط خارجي من $providerLabel — سيُشغَّل مباشرة داخل التطبيق'
+                  : 'رابط خارجي من $providerLabel — سيُحفظ كفيديو خارجي وسيتم '
+                      'محاولة تشغيله داخل التطبيق، وفتحه خارجياً إن تعذّر ذلك',
+              style: TextStyle(fontSize: 12, color: Colors.green.shade700),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// يكتشف مزوّد الفيديو من الرابط (تقريبي، من جانب الواجهة فقط للعرض).
+  /// التحقق الفعلي والملزم يتم من الخادم عند الحفظ (قد يرفض بـ 422).
+  static String? detectVideoProvider(String url) {
+    final u = url.trim().toLowerCase();
+    if (u.contains('youtube.com') || u.contains('youtu.be')) {
+      return 'youtube';
+    }
+    if (u.contains('drive.google.com') || u.contains('docs.google.com/uc')) {
+      return 'google_drive';
+    }
+    if (u.contains('vimeo.com')) {
+      return 'vimeo';
+    }
+    if (u.contains('facebook.com') || u.contains('fb.watch')) {
+      return 'facebook';
+    }
+    return null;
   }
 }

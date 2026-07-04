@@ -79,7 +79,7 @@ class ApiConstants {
   ///    الباك اند: "Images continue using public /storage/... URLs"
   ///    (بعكس الفيديو/الصوت المحميين اللذين يصلان كرابط signed-media
   ///    كامل جاهز أصلاً، فلا يدخلان هذا الفرع إطلاقاً).
-  static String mediaUrl(String url) {
+  /*static String mediaUrl(String url) {
     if (url.isEmpty) return url;
 
     final uri = Uri.tryParse(url);
@@ -112,7 +112,7 @@ class ApiConstants {
     final cleanPath =
         url.replaceAll(RegExp(r'^/'), '').replaceAll(RegExp(r'^storage/'), '');
     return '$cleanBase/storage/$cleanPath';
-  }
+  }*/
 
   // ✅ دالة لإنشاء روابط بديلة (للمعاينة)
   static List<String> getAlternativeUrls(String path) {
@@ -164,5 +164,55 @@ class ApiConstants {
       buffer.write('&$status=$status');
     }
     return buffer.toString();
+  }
+  // استبدل mediaUrl الحالية بهذه النسخة الموحّدة
+
+  static String getFullMediaUrl(String? path) {
+    if (path == null || path.isEmpty) return '';
+    if (path.startsWith('http')) return path;
+
+    final cleanBase = baseUrl.replaceAll(RegExp(r'/api/?$'), '');
+
+    // تنظيف المسار
+    String cleanPath = path;
+    cleanPath = cleanPath.replaceAll(
+        RegExp(r'^(/storage/|storage/|/public/|public/)'), '');
+
+    // بناء الرابط النهائي
+    return '$cleanBase/storage/$cleanPath';
+  }
+
+  // استبدل mediaUrl الحالية بهذه النسخة الموحّدة
+  static String mediaUrl(String? url) {
+    if (url == null || url.isEmpty) return '';
+
+    // رابط نسبي قادم من الباك-إند بدون http
+    if (!url.startsWith('http')) {
+      return getFullMediaUrl(url);
+    }
+
+    final uri = Uri.tryParse(url);
+    if (uri == null) return url;
+
+    final isGoogleDrive = uri.host.contains('drive.google.com') ||
+        uri.host.contains('docs.google.com');
+
+    if (isGoogleDrive) {
+      final patterns = [
+        RegExp(r'/d/([a-zA-Z0-9_-]+)'),
+        RegExp(r'id=([a-zA-Z0-9_-]+)'),
+      ];
+      for (final pattern in patterns) {
+        final match = pattern.firstMatch(url);
+        if (match != null) {
+          final fileId = match.group(1)!;
+          return 'https://drive.google.com/uc?export=download&id=$fileId&confirm=t';
+        }
+      }
+      return url;
+    }
+
+    // أي رابط آخر: فرض https دائمًا (بدل تكرار replaceFirst في كل ويدجت)
+    return url.replaceFirst('http://', 'https://');
   }
 }

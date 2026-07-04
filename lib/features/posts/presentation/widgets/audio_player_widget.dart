@@ -1,0 +1,377 @@
+// lib/features/post_details/presentation/widgets/premium_audio_player.dart
+
+import 'dart:io';
+import 'package:admin_dashboard/core/constants/api_constants.dart';
+import 'package:admin_dashboard/core/services/auth_service.dart';
+import 'package:flutter/material.dart';
+import 'package:audioplayers/audioplayers.dart';
+import 'package:flutter/services.dart';
+import 'package:http/http.dart' as http;
+import 'package:path_provider/path_provider.dart';
+
+class PremiumAudioPlayer extends StatefulWidget {
+  final String audioUrl;
+  final String title;
+
+  const PremiumAudioPlayer({
+    super.key,
+    required this.audioUrl,
+    required this.title,
+  });
+
+  @override
+  State<PremiumAudioPlayer> createState() => _PremiumAudioPlayerState();
+}
+
+class _PremiumAudioPlayerState extends State<PremiumAudioPlayer>
+    with SingleTickerProviderStateMixin {
+  final AudioPlayer _audioPlayer = AudioPlayer();
+
+  bool _isPlaying = false;
+  bool _isLoading = true;
+  bool _hasError = false;
+  Duration _duration = Duration.zero;
+  Duration _position = Duration.zero;
+  double _playbackSpeed = 1.0;
+  late AnimationController _waveAnimationController;
+
+  @override
+  void initState() {
+    super.initState();
+    _waveAnimationController = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 1),
+    )..repeat(reverse: true);
+    _initAudio();
+  }
+
+  Future<void> _initAudio() async {
+    if (!mounted) return;
+    setState(() {
+      _isLoading = true;
+      _hasError = false;
+    });
+
+    try {
+      await _audioPlayer.setReleaseMode(ReleaseMode.stop);
+
+      _audioPlayer.onDurationChanged.listen((d) {
+        if (mounted) setState(() => _duration = d);
+      });
+      _audioPlayer.onPositionChanged.listen((p) {
+        if (mounted) setState(() => _position = p);
+      });
+      _audioPlayer.onPlayerComplete.listen((_) {
+        if (mounted) {
+          setState(() {
+            _isPlaying = false;
+            _position = Duration.zero;
+          });
+          _waveAnimationController.stop();
+        }
+      });
+      _audioPlayer.onPlayerStateChanged.listen((state) {
+        if (mounted) setState(() => _isPlaying = state == PlayerState.playing);
+      });
+
+      // ✅ استخدام UrlHelper مباشرة — نفس الطريقة التي تعمل مع باقي الـ API
+      final localPath = await _downloadWithAuthHeaders(widget.audioUrl);
+      if (!mounted) return;
+
+      await _audioPlayer.setSource(DeviceFileSource(localPath));
+      debugPrint('✅ Audio loaded from: $localPath');
+
+      if (mounted)
+        setState(() {
+          _isLoading = false;
+          _hasError = false;
+        });
+    } catch (e) {
+      debugPrint('❌ Audio init error: $e');
+      if (mounted)
+        setState(() {
+          _isLoading = false;
+          _hasError = true;
+        });
+    }
+  }
+
+  Future<String> _downloadWithAuthHeaders(String url) async {
+    // ✅ Cache: إذا الملف موجود مسبقاً نرجعه مباشرة
+    final dir = await getTemporaryDirectory();
+    final cacheFile = File('${dir.path}/audio_${url.hashCode.abs()}.mp3');
+
+    if (await cacheFile.exists() && await cacheFile.length() > 0) {
+      debugPrint('✅ Using cached audio: ${cacheFile.path}');
+      return cacheFile.path;
+    }
+
+    // ✅ استخدام UrlHelper.getAuthHeaders() مباشرة — يحتوي على كل الـ headers الصحيحة
+    final headers = {
+      'Authorization': 'Bearer $AuthService.getToken()',
+    };
+    debugPrint('⬇️ Downloading audio...');
+    debugPrint('🔑 Headers: $headers');
+
+    final response = await http
+        .get(Uri.parse(ApiConstants.mediaUrl(url)), headers: headers)
+        .timeout(const Duration(seconds: 60));
+
+    debugPrint('📥 Status: ${response.statusCode}');
+    debugPrint('📥 Content-Type: ${response.headers['content-type']}');
+    debugPrint('📥 Content-Length: ${response.headers['content-length']}');
+
+    if (response.statusCode == 200) {
+      await cacheFile.writeAsBytes(response.bodyBytes);
+      debugPrint(
+          '✅ Saved: ${cacheFile.path} (${response.bodyBytes.length} bytes)');
+      return cacheFile.path;
+    } else {
+      debugPrint('❌ Response body: ${response.body}');
+      throw Exception('Download failed: HTTP ${response.statusCode}');
+    }
+  }
+
+  @override
+  void dispose() {
+    _audioPlayer.dispose();
+    _waveAnimationController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _togglePlayPause() async {
+    if (_hasError) {
+      await _initAudio();
+      return;
+    }
+
+    try {
+      if (_isPlaying) {
+        await _audioPlayer.pause();
+        _waveAnimationController.stop();
+      } else {
+        if (_position >= _duration && _duration > Duration.zero) {
+          await _audioPlayer.seek(Duration.zero);
+        }
+        await _audioPlayer.resume();
+        _waveAnimationController.repeat(reverse: true);
+      }
+      HapticFeedback.lightImpact();
+    } catch (e) {
+      debugPrint('❌ Toggle error: $e');
+      await _initAudio();
+    }
+  }
+
+  Future<void> _seekTo(Duration position) async {
+    try {
+      await _audioPlayer.seek(position);
+    } catch (e) {
+      debugPrint('❌ Seek error: $e');
+    }
+  }
+
+  Future<void> _changeSpeed() async {
+    setState(() => _playbackSpeed = _playbackSpeed == 1.0 ? 1.5 : 1.0);
+    await _audioPlayer.setPlaybackRate(_playbackSpeed);
+    HapticFeedback.selectionClick();
+  }
+
+  String _formatDuration(Duration duration) {
+    final m = duration.inMinutes.remainder(60);
+    final s = duration.inSeconds.remainder(60);
+    return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: isDark
+              ? [Colors.grey[900]!, Colors.grey[850]!]
+              : [Colors.grey[100]!, Colors.grey[50]!],
+        ),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          children: [
+            Row(
+              children: [
+                GestureDetector(
+                  onTap: _isLoading ? null : _togglePlayPause,
+                  child: Container(
+                    width: 56,
+                    height: 56,
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: _hasError
+                            ? [Colors.red.shade400, Colors.red.shade600]
+                            : [Colors.teal.shade400, Colors.teal.shade600],
+                      ),
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: (_hasError ? Colors.red : Colors.teal)
+                              .withOpacity(0.3),
+                          blurRadius: 12,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: _isLoading
+                        ? const Center(
+                            child: SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                color: Colors.white,
+                                strokeWidth: 2,
+                              ),
+                            ),
+                          )
+                        : Icon(
+                            _hasError
+                                ? Icons.refresh
+                                : (_isPlaying ? Icons.pause : Icons.play_arrow),
+                            color: Colors.white,
+                            size: 28,
+                          ),
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        widget.title,
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: isDark ? Colors.white : Colors.black87,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        _isLoading
+                            ? 'جاري التحميل...'
+                            : _hasError
+                                ? 'فشل التحميل، اضغط للمحاولة'
+                                : 'بودكاست',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: _hasError
+                              ? Colors.red.shade400
+                              : (isDark
+                                  ? Colors.white.withOpacity(0.6)
+                                  : Colors.black.withOpacity(0.5)),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (!_isLoading && !_hasError)
+                  GestureDetector(
+                    onTap: _changeSpeed,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: isDark
+                            ? Colors.white.withOpacity(0.1)
+                            : Colors.black.withOpacity(0.05),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        '${_playbackSpeed}x',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: isDark ? Colors.white : Colors.black87,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            if (_isPlaying)
+              AnimatedBuilder(
+                animation: _waveAnimationController,
+                builder: (context, child) {
+                  return Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: List.generate(
+                      20,
+                      (index) => Container(
+                        width: 2,
+                        height: 10 +
+                            (_waveAnimationController.value * 15) *
+                                (index % 3 + 1),
+                        margin: const EdgeInsets.symmetric(horizontal: 1.5),
+                        decoration: BoxDecoration(
+                          color: Colors.teal,
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            if (!_isLoading && !_hasError)
+              Row(
+                children: [
+                  Text(
+                    _formatDuration(_position),
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: isDark
+                          ? Colors.white.withOpacity(0.5)
+                          : Colors.black.withOpacity(0.4),
+                    ),
+                  ),
+                  Expanded(
+                    child: Slider(
+                      value: (_duration.inSeconds > 0)
+                          ? _position.inSeconds
+                              .toDouble()
+                              .clamp(0, _duration.inSeconds.toDouble())
+                          : 0.0,
+                      max: _duration.inSeconds > 0
+                          ? _duration.inSeconds.toDouble()
+                          : 1.0,
+                      onChanged: _duration.inSeconds > 0
+                          ? (value) => _seekTo(Duration(seconds: value.toInt()))
+                          : null,
+                      activeColor: Colors.teal,
+                      inactiveColor: isDark
+                          ? Colors.white.withOpacity(0.2)
+                          : Colors.black.withOpacity(0.1),
+                    ),
+                  ),
+                  Text(
+                    _formatDuration(_duration),
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: isDark
+                          ? Colors.white.withOpacity(0.5)
+                          : Colors.black.withOpacity(0.4),
+                    ),
+                  ),
+                ],
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
