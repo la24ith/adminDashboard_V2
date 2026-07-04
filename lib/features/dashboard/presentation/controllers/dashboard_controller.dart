@@ -1,6 +1,7 @@
 import 'package:admin_dashboard/features/dashboard/presentation/widgets/dashboard_home_content.dart';
 import 'package:admin_dashboard/features/posts/presentation/pages/posts_management_page.dart';
 import 'package:admin_dashboard/features/user_reports/presentation/pages/user_reports_page.dart';
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import '../../../../core/network/dio_client.dart';
 import '../../../../core/constants/api_constants.dart';
@@ -75,10 +76,43 @@ class DashboardController extends ChangeNotifier {
         throw Exception('فشل تحميل بيانات لوحة التحكم');
       }
     } catch (e) {
-      _error = e.toString();
+      _error = _mapErrorToUserMessage(e);
       _isLoading = false;
       notifyListeners();
     }
+  }
+
+  /// ✅ تحويل أي استثناء تقني إلى رسالة واضحة ومفهومة للمستخدم النهائي
+  /// (لا يتم عرض أي تفاصيل تقنية مثل e.toString() على الإطلاق)
+  String _mapErrorToUserMessage(Object e) {
+    if (e is DioException) {
+      switch (e.type) {
+        case DioExceptionType.connectionTimeout:
+        case DioExceptionType.sendTimeout:
+        case DioExceptionType.receiveTimeout:
+          return 'انتهت مهلة الاتصال بالخادم، يرجى التحقق من اتصالك بالإنترنت والمحاولة مرة أخرى';
+        case DioExceptionType.connectionError:
+          return 'تعذر الاتصال بالخادم، يرجى التحقق من اتصالك بالإنترنت';
+        case DioExceptionType.badCertificate:
+          return 'حدث خطأ في الاتصال الآمن بالخادم';
+        case DioExceptionType.cancel:
+          return 'تم إلغاء الطلب';
+        case DioExceptionType.badResponse:
+          final statusCode = e.response?.statusCode;
+          if (statusCode == 401 || statusCode == 403) {
+            return 'انتهت صلاحية الجلسة، يرجى تسجيل الدخول مرة أخرى';
+          } else if (statusCode == 404) {
+            return 'تعذر العثور على بيانات لوحة التحكم';
+          } else if (statusCode != null && statusCode >= 500) {
+            return 'الخادم يواجه مشكلة حالياً، يرجى المحاولة لاحقاً';
+          }
+          return 'حدث خطأ أثناء تحميل بيانات لوحة التحكم';
+        case DioExceptionType.unknown:
+          return 'تعذر الاتصال بالخادم، يرجى التحقق من اتصالك بالإنترنت والمحاولة مرة أخرى';
+      }
+    }
+    // أي خطأ آخر غير متوقع
+    return 'حدث خطأ غير متوقع أثناء تحميل البيانات، يرجى المحاولة مرة أخرى';
   }
 
   Future<void> refreshDashboard() async {
