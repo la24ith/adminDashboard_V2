@@ -28,6 +28,7 @@ class DashboardSidebar extends StatelessWidget {
       ),
       child: Column(
         children: [
+          SizedBox(height: 24),
           // Logo Section
           _buildLogoSection(),
           const Divider(color: Colors.white24, height: 1),

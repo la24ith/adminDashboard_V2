@@ -106,7 +106,6 @@ class PostScheduleSection extends StatelessWidget {
                 ),
               ),
             ),
-          SizedBox(height: 16),
         ],
       ),
     );

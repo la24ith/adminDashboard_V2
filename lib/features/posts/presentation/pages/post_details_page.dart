@@ -1,9 +1,10 @@
-// lib/features/posts/presentation/pages/post_details_page.dart
 import 'dart:io';
 import 'package:admin_dashboard/core/constants/api_constants.dart';
 import 'package:admin_dashboard/core/constants/app_colors.dart';
 import 'package:admin_dashboard/features/posts/data/models/post_model.dart';
+import 'package:admin_dashboard/features/posts/presentation/widgets/external_video_player.dart';
 import 'package:admin_dashboard/core/services/auth_service.dart';
+import 'package:admin_dashboard/features/posts/presentation/widgets/video_provider_detector.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
@@ -11,6 +12,22 @@ import 'package:path_provider/path_provider.dart';
 import 'package:video_player/video_player.dart';
 import 'package:just_audio/just_audio.dart';
 import '../../../../core/network/dio_client.dart';
+
+/// ✅ يحمل معلومات الفيديو النهائية بعد تحديد مصدره: إمّا ملف مرفوع
+/// على الخادم (يُشغَّل داخلياً عبر video_player كما كان سابقاً)، أو
+/// رابط خارجي (يوتيوب/غوغل درايف/فيسبوك/فيميو/أخرى) يُشغَّل عبر
+/// ExternalVideoPlayer.
+class _VideoInfo {
+  final String url;
+  final bool isExternal;
+  final String? provider;
+
+  const _VideoInfo({
+    required this.url,
+    required this.isExternal,
+    this.provider,
+  });
+}
 
 class PostDetailsPage extends StatefulWidget {
   final Post post;
@@ -50,9 +67,14 @@ class _PostDetailsPageState extends State<PostDetailsPage> {
   // تحتوي على Authorization أبداً لأنه يُضاف ديناميكياً عبر Interceptor.
   Map<String, String> _mediaHeaders = const {};
 
+  /// ✅ معلومات الفيديو المحسوبة مرة واحدة لكل منشور (خارجي أم مرفوع؟
+  /// وما مزوّده إن كان خارجياً؟). يُعاد حسابها فقط عند تغيّر المنشور.
+  _VideoInfo? _videoInfo;
+
   @override
   void initState() {
     super.initState();
+    _videoInfo = _resolveVideoInfo(widget.post);
     _loadMediaHeadersThenInitVideo();
   }
 
@@ -89,14 +111,66 @@ class _PostDetailsPageState extends State<PostDetailsPage> {
       _audioPosition = Duration.zero;
       _audioDuration = Duration.zero;
 
+      _videoInfo = _resolveVideoInfo(widget.post);
       _initVideo();
     }
   }
 
+  /// ✅ يحدّد مصدر الفيديو النهائي حسب أولوية واضحة:
+  /// 1) سجل media (أدق مصدر بعد تحديثات الخادم: source_type/provider/
+  ///    external_url).
+  /// 2) الحقل القديم video_url المحفوظ مباشرة على المنشور — قد يكون
+  ///    رابطاً خارجياً أُدخل يدوياً بدون سجل media مطابق، لذا نكتشف
+  ///    مزوّده من الرابط نفسه لأن الخادم لا يرسل provider له.
+  _VideoInfo? _resolveVideoInfo(Post post) {
+    PostMedia? videoMedia;
+    try {
+      videoMedia = post.media.firstWhere((m) => m.isVideo);
+    } catch (_) {
+      videoMedia = null;
+    }
+
+    if (videoMedia != null) {
+      if (videoMedia.isExternal) {
+        final url = videoMedia.externalUrl ?? videoMedia.playableUrl;
+        if (url != null && url.isNotEmpty) {
+          return _VideoInfo(
+            url: url,
+            isExternal: true,
+            provider: videoMedia.provider ?? VideoProviderDetector.detect(url),
+          );
+        }
+      } else {
+        final path = videoMedia.playableUrl;
+        if (path != null && path.isNotEmpty) {
+          return _VideoInfo(
+            url: ApiConstants.mediaUrl(path),
+            isExternal: false,
+          );
+        }
+      }
+    }
+
+    final raw = post.videoUrlField;
+    if (raw != null && raw.isNotEmpty) {
+      final detected = VideoProviderDetector.detect(raw);
+      if (detected != null) {
+        return _VideoInfo(url: raw, isExternal: true, provider: detected);
+      }
+      return _VideoInfo(url: ApiConstants.mediaUrl(raw), isExternal: false);
+    }
+
+    return null;
+  }
+
   Future<void> _initVideo() async {
-    // ✅ إصلاح: استخدام _getVideoUrl() بدلاً من videoUrl مباشرة
-    final videoUrl = _getVideoUrl();
-    if (videoUrl == null || videoUrl.isEmpty) return;
+    final info = _videoInfo;
+    // ✅ الفيديو الخارجي (يوتيوب/غوغل درايف/فيسبوك/فيميو/أخرى) لا يحتاج
+    // إلى VideoPlayerController إطلاقاً — يُدار بالكامل داخل ويدجت
+    // ExternalVideoPlayer المستقلة في _buildVideoCard.
+    if (info == null || info.isExternal) return;
+
+    final videoUrl = info.url;
 
     try {
       debugPrint('🎬 VIDEO URL = $videoUrl');
@@ -283,19 +357,6 @@ class _PostDetailsPageState extends State<PostDetailsPage> {
     super.dispose();
   }
 
-  // ✅ إصلاح: دالة موحدة لجلب URL الفيديو من videoUrl أو media
-  String? _getVideoUrl() {
-    if (widget.post.videoUrl != null && widget.post.videoUrl!.isNotEmpty) {
-      return ApiConstants.mediaUrl(widget.post.videoUrl!);
-    }
-    try {
-      final videoMedia = widget.post.media.firstWhere((m) => m.isVideo);
-      return ApiConstants.mediaUrl(videoMedia.filePath);
-    } catch (e) {
-      return null;
-    }
-  }
-
   String? _getAudioUrl() {
     if (widget.post.audioUrl != null && widget.post.audioUrl!.isNotEmpty) {
       return ApiConstants.mediaUrl(widget.post.audioUrl!);
@@ -314,8 +375,9 @@ class _PostDetailsPageState extends State<PostDetailsPage> {
     final screenWidth = MediaQuery.of(context).size.width;
     final isTablet = screenWidth >= 600;
 
-    // ✅ إصلاح: استخدام _getVideoUrl() للتحقق من وجود فيديو
-    final hasVideo = _getVideoUrl() != null;
+    // ✅ إصلاح: التحقق من وجود فيديو عبر _videoInfo المحسوب مسبقاً
+    // (يغطي الملفات المرفوعة والروابط الخارجية معاً).
+    final hasVideo = _videoInfo != null;
     final audioUrl = _getAudioUrl();
 
     return Directionality(
@@ -341,7 +403,7 @@ class _PostDetailsPageState extends State<PostDetailsPage> {
                     const SizedBox(height: 24),
                     _buildContent(isDark),
                     const SizedBox(height: 24),
-                    // ✅ إصلاح: استخدام hasVideo المبني على _getVideoUrl()
+                    // ✅ إصلاح: استخدام hasVideo المبني على _videoInfo
                     if (hasVideo) ...[
                       _buildVideoSection(isDark),
                       const SizedBox(height: 24),
@@ -544,6 +606,9 @@ class _PostDetailsPageState extends State<PostDetailsPage> {
 
   // ==================== Video Section ====================
   Widget _buildVideoSection(bool isDark) {
+    final info = _videoInfo;
+    final isExternal = info?.isExternal ?? false;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -562,6 +627,25 @@ class _PostDetailsPageState extends State<PostDetailsPage> {
               'فيديو مرفق',
               style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
             ),
+            // ✅ شارة صغيرة توضّح مصدر الفيديو عندما يكون رابطاً خارجياً
+            if (isExternal) ...[
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: Colors.purple.withOpacity(0.08),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  VideoProviderDetector.arabicLabel(info?.provider),
+                  style: TextStyle(
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.purple.shade700,
+                  ),
+                ),
+              ),
+            ],
           ],
         ),
         const SizedBox(height: 12),
@@ -571,6 +655,24 @@ class _PostDetailsPageState extends State<PostDetailsPage> {
   }
 
   Widget _buildVideoCard(bool isDark) {
+    final info = _videoInfo;
+    if (info == null) return const SizedBox.shrink();
+
+    // ✅ فيديو خارجي (يوتيوب/غوغل درايف/فيسبوك/فيميو/أخرى): يُعرض عبر
+    // ويدجت مستقلة تدير تشغيله داخل التطبيق قدر الإمكان، مع فتح خارجي
+    // تلقائي كخيار احتياطي عند تعذّر التضمين.
+    if (info.isExternal) {
+      return ExternalVideoPlayer(
+        key: ValueKey('external_video_${widget.post.id}_${info.url}'),
+        url: info.url,
+        provider: info.provider,
+        borderRadius: BorderRadius.circular(24),
+        height: 230,
+      );
+    }
+
+    // 👇 السلوك الأصلي دون أي تغيير: فيديو مرفوع على الخادم، يُشغَّل
+    // عبر VideoPlayerController مع رؤوس المصادقة.
     return Container(
       decoration: BoxDecoration(
         color: Colors.black,

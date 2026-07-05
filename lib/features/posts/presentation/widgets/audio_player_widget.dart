@@ -30,6 +30,7 @@ class _PremiumAudioPlayerState extends State<PremiumAudioPlayer>
   bool _isPlaying = false;
   bool _isLoading = true;
   bool _hasError = false;
+  String? _errorMessage;
   Duration _duration = Duration.zero;
   Duration _position = Duration.zero;
   double _playbackSpeed = 1.0;
@@ -50,6 +51,7 @@ class _PremiumAudioPlayerState extends State<PremiumAudioPlayer>
     setState(() {
       _isLoading = true;
       _hasError = false;
+      _errorMessage = null;
     });
 
     try {
@@ -74,44 +76,75 @@ class _PremiumAudioPlayerState extends State<PremiumAudioPlayer>
         if (mounted) setState(() => _isPlaying = state == PlayerState.playing);
       });
 
-      // ✅ استخدام UrlHelper مباشرة — نفس الطريقة التي تعمل مع باقي الـ API
       final localPath = await _downloadWithAuthHeaders(widget.audioUrl);
       if (!mounted) return;
 
       await _audioPlayer.setSource(DeviceFileSource(localPath));
       debugPrint('✅ Audio loaded from: $localPath');
 
-      if (mounted)
+      if (mounted) {
         setState(() {
           _isLoading = false;
           _hasError = false;
         });
+      }
     } catch (e) {
       debugPrint('❌ Audio init error: $e');
-      if (mounted)
+      if (mounted) {
         setState(() {
           _isLoading = false;
           _hasError = true;
+          // ✅ إصلاح: نعرض سبب الفشل الفعلي للمستخدم (مثلاً "انتهت
+          // صلاحية الجلسة" أو "HTTP 404") بدل رسالة عامة غير مفيدة.
+          _errorMessage = e.toString().replaceFirst('Exception: ', '');
         });
+      }
     }
   }
 
   Future<String> _downloadWithAuthHeaders(String url) async {
-    // ✅ Cache: إذا الملف موجود مسبقاً نرجعه مباشرة
     final dir = await getTemporaryDirectory();
-    final cacheFile = File('${dir.path}/audio_${url.hashCode.abs()}.mp3');
+    // ✅ إصلاح: نفس مشكلة post_details_page — نعتمد على مسار الرابط
+    // فقط (بدون query params كـ expires/signature) كمفتاح كاش ثابت،
+    // بدل hash الرابط الكامل الذي يتغيّر مع كل توليد رابط موقّع جديد.
+    final stablePath = Uri.tryParse(url)?.path ?? url;
+    final cacheFile =
+        File('${dir.path}/audio_${stablePath.hashCode.abs()}.mp3');
 
-    if (await cacheFile.exists() && await cacheFile.length() > 0) {
-      debugPrint('✅ Using cached audio: ${cacheFile.path}');
-      return cacheFile.path;
+    if (await cacheFile.exists()) {
+      final size = await cacheFile.length();
+      // ✅ إصلاح جوهري: قبل هذا الإصلاح كان أي ملف كاش موجود يُستخدم
+      // مباشرة بلا أي تحقق من محتواه — وبما أن الخطأ السابق (التوكن
+      // الفاسد) كان يخزّن استجابة خطأ JSON/HTML كملف ".mp3" فعلياً،
+      // كان هذا الملف الفاسد يُعاد استخدامه إلى الأبد حتى بعد إصلاح
+      // التوكن، لأن الكاش "موجود" ولو كان فاسداً! رسائل الخطأ عادة
+      // أصغر من 2KB بينما أي ملف صوتي حقيقي أكبر من ذلك بكثير.
+      if (size > 2048) {
+        debugPrint('✅ Using cached audio: ${cacheFile.path} ($size bytes)');
+        return cacheFile.path;
+      }
+      debugPrint(
+          '🗑️ حذف كاش صوتي فاسد/مشبوه (حجمه $size بايت فقط) وإعادة التحميل');
+      await cacheFile.delete();
     }
 
-    // ✅ استخدام UrlHelper.getAuthHeaders() مباشرة — يحتوي على كل الـ headers الصحيحة
+    // ✅ الإصلاح الأساسي والحرج: كان الكود القديم يكتب حرفياً
+    // 'Bearer $AuthService.getToken()' — وهذا لا يستدعي الدالة إطلاقاً
+    // (صيغة الاستيفاء البسيطة $ في Dart لا تدعم استدعاء دوال بأقواس
+    // بدون أقواس معقوفة ${...})، بل يحوّل مرجع الدالة نفسها (tear-off)
+    // إلى نص عبر toString()، فيصبح الهيدر شيئاً مثل:
+    // "Bearer Closure: () => Future<String?> from Function 'getToken': static.()"
+    // وهو ليس توكناً صالحاً بأي شكل، فيرفضه السيرفر دائماً بـ 401.
+    // الإصلاح: استدعاء الدالة فعلياً وانتظار نتيجتها أولاً.
+    final token = await AuthService.getToken();
+    if (token == null || token.isEmpty) {
+      throw Exception('انتهت صلاحية الجلسة، الرجاء تسجيل الدخول من جديد');
+    }
+
     final headers = {
-      'Authorization': 'Bearer $AuthService.getToken()',
+      'Authorization': 'Bearer $token',
     };
-    debugPrint('⬇️ Downloading audio...');
-    debugPrint('🔑 Headers: $headers');
+    debugPrint('⬇️ Downloading audio from: ${ApiConstants.mediaUrl(url)}');
 
     final response = await http
         .get(Uri.parse(ApiConstants.mediaUrl(url)), headers: headers)
@@ -122,13 +155,26 @@ class _PremiumAudioPlayerState extends State<PremiumAudioPlayer>
     debugPrint('📥 Content-Length: ${response.headers['content-length']}');
 
     if (response.statusCode == 200) {
+      // ✅ حماية إضافية: حتى مع توكن صحيح، نتحقق أن الاستجابة فعلاً
+      // ملف صوتي وليست صفحة خطأ HTML/JSON بريئة الشكل (بعض السيرفرات
+      // ترجع 200 مع صفحة خطأ بدل رمز خطأ صريح).
+      final contentType = response.headers['content-type'] ?? '';
+      final looksLikeError = contentType.contains('json') ||
+          contentType.contains('html') ||
+          response.bodyBytes.length < 2048;
+      if (looksLikeError) {
+        throw Exception(
+          'الاستجابة ليست ملفاً صوتياً صالحاً (نوع المحتوى: $contentType)',
+        );
+      }
+
       await cacheFile.writeAsBytes(response.bodyBytes);
       debugPrint(
           '✅ Saved: ${cacheFile.path} (${response.bodyBytes.length} bytes)');
       return cacheFile.path;
     } else {
       debugPrint('❌ Response body: ${response.body}');
-      throw Exception('Download failed: HTTP ${response.statusCode}');
+      throw Exception('فشل تحميل الملف الصوتي (HTTP ${response.statusCode})');
     }
   }
 
@@ -265,7 +311,8 @@ class _PremiumAudioPlayerState extends State<PremiumAudioPlayer>
                         _isLoading
                             ? 'جاري التحميل...'
                             : _hasError
-                                ? 'فشل التحميل، اضغط للمحاولة'
+                                ? (_errorMessage ??
+                                    'فشل التحميل، اضغط للمحاولة')
                                 : 'بودكاست',
                         style: TextStyle(
                           fontSize: 12,
@@ -275,6 +322,8 @@ class _PremiumAudioPlayerState extends State<PremiumAudioPlayer>
                                   ? Colors.white.withOpacity(0.6)
                                   : Colors.black.withOpacity(0.5)),
                         ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ],
                   ),
