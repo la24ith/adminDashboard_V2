@@ -468,8 +468,28 @@ class _PostFormPageState extends State<PostFormPage>
     bool success;
 
     if (isEdit) {
+      final originalPost = widget.post!;
+
+      // ✅ "إلغاء الوسيط" يعني: كان للمنشور وسيط من هذا النوع مسبقاً،
+      // والآن لم يعد هناك لا ملف جديد ولا رابط جديد لهذا النوع. في هذه
+      // الحالة يجب حذف الوسيط فعلياً من الخادم بدل ترك القيمة القديمة.
+      final removeThumbnail = (originalPost.thumbnail != null &&
+              originalPost.thumbnail!.isNotEmpty) &&
+          _thumbnailFile == null &&
+          (_thumbnailUrl == null || _thumbnailUrl!.isEmpty);
+
+      final removeVideo = (originalPost.videoUrl != null &&
+              originalPost.videoUrl!.isNotEmpty) &&
+          _videoFile == null &&
+          (_videoUrl == null || _videoUrl!.isEmpty);
+
+      final removeAudio = (originalPost.audioUrl != null &&
+              originalPost.audioUrl!.isNotEmpty) &&
+          _audioFile == null &&
+          (_audioUrl == null || _audioUrl!.isEmpty);
+
       success = await widget.controller.updatePost(
-        widget.post!.id,
+        originalPost.id,
         title: _titleController.text,
         content: _contentController.text,
         status: _status,
@@ -481,10 +501,17 @@ class _PostFormPageState extends State<PostFormPage>
         videoUrl: _videoUrl,
         audioFile: _audioFile,
         audioUrl: _audioUrl,
-        // ✅ إذا كان للمنشور عنصر فيديو مسبق (مرفوع أو خارجي) نمرر معرّفه
-        // حتى يتم تحديثه (PUT) بدل إنشاء عنصر مكرر عند تغيير الرابط
-        // الخارجي أو استبدال الفيديو المرفوع برابط خارجي.
-        existingVideoMediaId: widget.post?.firstVideo?.id,
+        // ✅ إذا كان للمنشور عنصر وسائط مسبق (فيديو/صورة/صوت) نمرر
+        // معرّفه حتى يتم حذفه أو تحديثه بدل إنشاء عنصر مكرر عند تغيير
+        // الرابط الخارجي أو استبدال الملف المرفوع بنوع آخر.
+        existingVideoMediaId: originalPost.firstVideo?.id,
+        existingThumbnailMediaId: originalPost.firstImage?.id,
+        existingAudioMediaId: originalPost.firstAudio?.id,
+        // ✅ جديد: يخبر الكونترولر بحذف الوسيط فعلياً من الخادم عند
+        // إلغائه دون اختيار بديل.
+        removeThumbnail: removeThumbnail,
+        removeVideo: removeVideo,
+        removeAudio: removeAudio,
       );
     } else {
       success = await widget.controller.createPost(

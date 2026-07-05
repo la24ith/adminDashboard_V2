@@ -321,6 +321,17 @@ class PostsController extends ChangeNotifier {
     // كان يجب إنشاء عنصر فيديو خارجي جديد أم تحديث العنصر الموجود
     // (PUT /api/admin/posts/media/{media_id}) بدل تكرار السجلات.
     int? existingVideoMediaId,
+    // ✅ جديد: معرّفات عناصر الوسائط الحالية (من جدول media) للصورة
+    // المصغّرة والصوت، تُستخدم لحذف/استبدال العنصر القديم بدل تكرار
+    // إنشاء عناصر جديدة في كل مرة يُعدَّل فيها المنشور.
+    int? existingThumbnailMediaId,
+    int? existingAudioMediaId,
+    // ✅ جديد: تُمرَّر true عندما يُلغي المستخدم وسيطاً كان موجوداً
+    // مسبقاً (بدون اختيار بديل)، حتى نحذفه فعلياً من الخادم بدل ترك
+    // القيمة القديمة كما هي.
+    bool removeThumbnail = false,
+    bool removeVideo = false,
+    bool removeAudio = false,
   }) async {
     if (_isActionInProgress || _isDisposed) return false;
 
@@ -353,6 +364,11 @@ class PostsController extends ChangeNotifier {
           audioFile,
           audioUrl,
           existingVideoMediaId: existingVideoMediaId,
+          existingThumbnailMediaId: existingThumbnailMediaId,
+          existingAudioMediaId: existingAudioMediaId,
+          removeThumbnail: removeThumbnail,
+          removeVideo: removeVideo,
+          removeAudio: removeAudio,
         );
       } catch (mediaError) {
         // ❗ فشل رفع أحد الملحقات أثناء التحديث: لا نعرض رسالة نجاح
@@ -467,36 +483,122 @@ class PostsController extends ChangeNotifier {
     File? audioFile,
     String? audioUrl, {
     int? existingVideoMediaId,
+    int? existingThumbnailMediaId,
+    int? existingAudioMediaId,
+    bool removeThumbnail = false,
+    bool removeVideo = false,
+    bool removeAudio = false,
   }) async {
-    // رفع الصورة المصغرة
+    // ==================== الصورة المصغّرة ====================
     if (thumbnailFile != null && !_isDisposed) {
+      // ✅ إن وُجد عنصر صورة سابق في جدول media نحذفه أولاً قبل رفع
+      // الجديد، حتى لا تتراكم عناصر صور قديمة مع كل تعديل للمنشور.
+      if (existingThumbnailMediaId != null) {
+        await _deleteMediaItem(existingThumbnailMediaId);
+        if (_isDisposed) return;
+      }
       await _uploadMedia(postId, thumbnailFile, 'thumbnail');
     } else if (thumbnailUrl != null &&
         thumbnailUrl.isNotEmpty &&
         !_isDisposed) {
+      // ✅ رابط صورة جديد يحل محل الصورة القديمة: نحذف عنصر media
+      // القديم (إن وجد) حتى لا يبقى ظاهراً بجانب الرابط الجديد.
+      if (existingThumbnailMediaId != null) {
+        await _deleteMediaItem(existingThumbnailMediaId);
+        if (_isDisposed) return;
+      }
       await _updatePostField(postId, 'thumbnail', thumbnailUrl);
+    } else if (removeThumbnail && !_isDisposed) {
+      // ✅ المستخدم ألغى الصورة المصغّرة ولم يضع بديلاً: يجب حذفها
+      // فعلياً من الخادم (عنصر media إن وُجد + الحقل النصي) بدل ترك
+      // القيمة القديمة كما هي.
+      if (existingThumbnailMediaId != null) {
+        await _deleteMediaItem(existingThumbnailMediaId);
+        if (_isDisposed) return;
+      }
+      await _updatePostField(postId, 'thumbnail', null);
     }
 
-    // رفع الفيديو
+    // ==================== الفيديو ====================
     if (videoFile != null && !_isDisposed) {
+      // ✅ فيديو جديد مرفوع كملف يحل محل أي فيديو سابق (مرفوع أو
+      // خارجي)؛ نحذف العنصر القديم أولاً لتفادي التكرار أو بقاء
+      // الفيديو القديم ظاهراً مع الجديد.
+      if (existingVideoMediaId != null) {
+        await _deleteMediaItem(existingVideoMediaId);
+        if (_isDisposed) return;
+      }
       await _uploadMedia(postId, videoFile, 'video');
     } else if (videoUrl != null && videoUrl.isNotEmpty && !_isDisposed) {
-      // ✅ التحديث الجديد: الفيديو الخارجي (يوتيوب/فيميو/فيسبوك) لم يعد
-      // يُرسل كحقل نصي على المنشور (video_url عبر PUT /posts/{id})، بل
-      // يُنشأ/يُحدَّث كعنصر ضمن جدول media حسب المواصفة الجديدة من الباك
-      // اند (POST أو PUT /api/admin/posts/media/{id} بصيغة JSON).
+      // ✅ رابط فيديو خارجي (يوتيوب/فيميو/فيسبوك) يُنشأ أو يُحدَّث كعنصر
+      // ضمن جدول media (POST أو PUT /api/admin/posts/media/{id})، وهذا
+      // يُحدِّث العنصر الموجود في مكانه فيغطي أيضاً حالة "فيديو مرفوع
+      // سابقاً واستُبدل برابط خارجي" دون ترك نسخة قديمة.
       await _saveExternalVideo(
         postId,
         videoUrl,
         existingMediaId: existingVideoMediaId,
       );
+    } else if (removeVideo && !_isDisposed) {
+      // ✅ المستخدم ألغى الفيديو (استبدله بصورة مثلاً أو أزاله فقط):
+      // يجب حذف عنصر الفيديو من جدول media وتصفير الحقل النصي
+      // video_url على المنشور، وإلا يبقى الفيديو القديم ظاهراً بجانب
+      // أي وسيط جديد تمت إضافته.
+      if (existingVideoMediaId != null) {
+        await _deleteMediaItem(existingVideoMediaId);
+        if (_isDisposed) return;
+      }
+      await _updatePostField(postId, 'video_url', null);
     }
 
-    // رفع الصوت (لا تغيير: الباك اند لا يدعم صوت خارجي حالياً)
+    // ==================== الصوت ====================
     if (audioFile != null && !_isDisposed) {
+      if (existingAudioMediaId != null) {
+        await _deleteMediaItem(existingAudioMediaId);
+        if (_isDisposed) return;
+      }
       await _uploadMedia(postId, audioFile, 'audio');
     } else if (audioUrl != null && audioUrl.isNotEmpty && !_isDisposed) {
+      if (existingAudioMediaId != null) {
+        await _deleteMediaItem(existingAudioMediaId);
+        if (_isDisposed) return;
+      }
       await _updatePostField(postId, 'audio_url', audioUrl);
+    } else if (removeAudio && !_isDisposed) {
+      // ✅ المستخدم ألغى المقطع الصوتي: نحذف عنصر media الخاص به (إن
+      // وُجد) ونصفّر الحقل النصي audio_url على المنشور.
+      if (existingAudioMediaId != null) {
+        await _deleteMediaItem(existingAudioMediaId);
+        if (_isDisposed) return;
+      }
+      await _updatePostField(postId, 'audio_url', null);
+    }
+  }
+
+  /// يحذف عنصر وسائط واحداً من جدول media عبر
+  /// DELETE /api/admin/posts/media/{media_id}. يُستخدم عند إلغاء وسيط
+  /// (صورة/فيديو/صوت) أو استبداله بنوع مختلف تماماً، لضمان عدم بقاء
+  /// العنصر القديم ظاهراً بجانب الوسيط الجديد أو بعد الحذف.
+  Future<void> _deleteMediaItem(int mediaId) async {
+    if (_isDisposed) return;
+    final dio = DioClient.instance;
+    try {
+      await dio.delete('${ApiConstants.adminPosts}/media/$mediaId');
+    } on DioException catch (e) {
+      // ✅ إن كان العنصر محذوفاً مسبقاً من الخادم (404) نعتبرها نجاحاً
+      // صامتاً بدل إيقاف عملية الحفظ بالكامل بسبب حالة سباق بسيطة.
+      if (e.response?.statusCode == 404) {
+        debugPrint('ℹ️ عنصر الوسائط $mediaId غير موجود أصلاً على الخادم');
+        return;
+      }
+      final msg = _buildMediaErrorMessage(
+        statusCode: e.response?.statusCode,
+        responseData: e.response?.data,
+        type: 'media',
+        dioException: e,
+      );
+      _showSnackBar(msg, isError: true);
+      throw Exception(msg);
     }
   }
 
@@ -883,7 +985,13 @@ class PostsController extends ChangeNotifier {
     return cleanPath;
   }
 
-  Future<void> _updatePostField(int postId, String field, String value) async {
+  /// يُحدّث حقلاً نصياً واحداً على المنشور. [value] قد تكون null لتصفير
+  /// الحقل فعلياً على الخادم (يُستخدم عند إلغاء وسيط سابق).
+  Future<void> _updatePostField(
+    int postId,
+    String field,
+    String? value,
+  ) async {
     if (_isDisposed) return;
     final dio = DioClient.instance;
     await dio.put('/api/admin/posts/$postId', data: {field: value});
