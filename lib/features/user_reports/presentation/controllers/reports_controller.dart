@@ -106,6 +106,12 @@ class ReportsController extends ChangeNotifier {
     return file.path;
   }
 
+  // ✅ يفحص أول بايتات الملف ليحدد نوعه الحقيقي (بغض النظر عمّا يدّعيه السيرفر)
+  // ZIP/XLSX الحقيقي يبدأ بـ PK (0x50, 0x4B)، أي شيء غير ذلك نعتبره نص/CSV
+  bool _isRealZipXlsx(Uint8List bytes) {
+    return bytes.length >= 2 && bytes[0] == 0x50 && bytes[1] == 0x4B;
+  }
+
   // ✅ تصدير PDF
   Future<String?> exportPDF() async {
     _isExportingPDF = true;
@@ -141,6 +147,9 @@ class ReportsController extends ChangeNotifier {
   }
 
   // ✅ تصدير Excel
+  // ⚠️ ملاحظة: الـ API حاليًا بيرجّع CSV خام مو ملف xlsx حقيقي (تم اكتشافه عبر فحص البايتات).
+  // لحد ما ينصلح الباك اند (لازم يستخدم Excel::XLSX writer type بدل Excel::CSV)،
+  // منحفظ الملف بامتداد يطابق محتواه الفعلي حتى يشتغل صح بالمشاركة والفتح.
   Future<String?> exportExcel() async {
     _isExportingExcel = true;
     notifyListeners();
@@ -159,8 +168,18 @@ class ReportsController extends ChangeNotifier {
       }
 
       final bytes = Uint8List.fromList(response.data!);
+
+      // ✅ تحديد الامتداد الصحيح بناءً على المحتوى الفعلي وليس افتراضًا
+      final isRealXlsx = _isRealZipXlsx(bytes);
+      final extension = isRealXlsx ? 'xlsx' : 'csv';
+
+      if (!isRealXlsx) {
+        debugPrint(
+            '⚠️ تنبيه: الـ API رجّع CSV خام بدل xlsx حقيقي — يُنصح بإصلاح الباك اند (Excel::XLSX writer type)');
+      }
+
       final fileName =
-          'users_report_${DateTime.now().millisecondsSinceEpoch}.xlsx';
+          'users_report_${DateTime.now().millisecondsSinceEpoch}.$extension';
       final path = await _saveFile(bytes: bytes, fileName: fileName);
 
       _lastExportedPath = path;
