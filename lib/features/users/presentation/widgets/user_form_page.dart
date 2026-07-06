@@ -24,6 +24,24 @@ class _UserFormPageState extends State<UserFormPage>
   String _role = 'patient';
   bool _accountValid = false;
 
+  // ✅ فئة المستخدم (patient_segment) — تحدَّد من الأدمن فقط
+  static const List<Map<String, dynamic>> _segments = [
+    {'value': 'general', 'label': 'عام', 'icon': Icons.public},
+    {'value': 'diabetic', 'label': 'مرضى السكري', 'icon': Icons.bloodtype},
+    {
+      'value': 'breastfeeding',
+      'label': 'مرضعات',
+      'icon': Icons.family_restroom
+    },
+    {
+      'value': 'weight_loss',
+      'label': 'إنقاص الوزن',
+      'icon': Icons.fitness_center
+    },
+    {'value': 'weight_gain', 'label': 'زيادة الوزن', 'icon': Icons.restaurant},
+  ];
+  late String _patientSegment;
+
   // صفحة 2: القياسات الصحية
   late TextEditingController _idealWeightController;
   late TextEditingController _targetWeightController;
@@ -59,6 +77,12 @@ class _UserFormPageState extends State<UserFormPage>
         TextEditingController(text: widget.user?['height']?.toString() ?? '');
 
     _role = widget.user?['role'] ?? 'patient';
+
+    // ✅ تحميل الفئة الحالية إذا كانت موجودة (وضع التعديل)، وإلا افتراضي 'general'
+    final existingSegment = widget.user?['patient_segment'];
+    _patientSegment = _segments.any((s) => s['value'] == existingSegment)
+        ? existingSegment as String
+        : 'general';
 
     _validateAccount();
     _validateHealth();
@@ -317,6 +341,9 @@ class _UserFormPageState extends State<UserFormPage>
             ],
             onChanged: (v) => setState(() => _role = v!),
           ),
+          const SizedBox(height: 16),
+          // ✅ فئة المستخدم — يحددها الأدمن فقط
+          _buildSegmentDropdown(),
           if (widget.user == null) ...[
             const SizedBox(height: 16),
             _buildTextField(
@@ -345,6 +372,61 @@ class _UserFormPageState extends State<UserFormPage>
           ],
           const SizedBox(height: 16),
         ],
+      ),
+    );
+  }
+
+  // ✅ Dropdown خاص بفئة المستخدم مع أيقونة لكل فئة
+  Widget _buildSegmentDropdown() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: DropdownButtonFormField<String>(
+        value: _patientSegment,
+        isExpanded: true,
+        decoration: InputDecoration(
+          labelText: 'فئة المستخدم',
+          prefixIcon: Icon(Icons.category_outlined, color: AppColors.accent),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(20),
+            borderSide: BorderSide.none,
+          ),
+          filled: true,
+          fillColor: Colors.white,
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+        ),
+        items: _segments.map((segment) {
+          return DropdownMenuItem<String>(
+            value: segment['value'] as String,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(segment['icon'] as IconData,
+                    size: 18, color: AppColors.accent),
+                const SizedBox(width: 8),
+                Flexible(
+                  child: Text(
+                    segment['label'] as String,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          );
+        }).toList(),
+        onChanged: (v) {
+          if (v != null) setState(() => _patientSegment = v);
+        },
       ),
     );
   }
@@ -661,6 +743,8 @@ class _UserFormPageState extends State<UserFormPage>
       'name': _nameController.text.trim(),
       'email': _emailController.text.trim(),
       'role': _role,
+      // ✅ فئة المستخدم — تُرسل دائماً لأنها تُحدَّد من الأدمن فقط
+      'patient_segment': _patientSegment,
       if (_phoneController.text.trim().isNotEmpty)
         'phone': _phoneController.text.trim(),
       if (_idealWeightController.text.trim().isNotEmpty)
