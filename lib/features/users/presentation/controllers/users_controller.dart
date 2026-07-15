@@ -16,6 +16,7 @@ import '../../domain/usecases/extend_subscription.dart';
 import '../../domain/usecases/update_subscription.dart';
 import '../../domain/usecases/toggle_user_status.dart';
 import '../../domain/usecases/toggle_multi_device.dart';
+import '../../domain/usecases/change_user_password.dart';
 import '../../domain/repositories/user_repository.dart';
 
 class UsersController extends ChangeNotifier {
@@ -28,6 +29,7 @@ class UsersController extends ChangeNotifier {
   final UpdateSubscription updateSubscriptionUseCase;
   final ToggleUserStatus toggleUserStatusUseCase;
   final ToggleMultiDevice toggleMultiDeviceUseCase;
+  final ChangeUserPassword changeUserPasswordUseCase;
   final AddWeight addWeightUseCase;
   final GetUserWeightHistory getUserWeightHistoryUseCase;
   List<WeightEntity> get weightHistory => _weightHistory;
@@ -72,6 +74,7 @@ class UsersController extends ChangeNotifier {
     required this.updateSubscriptionUseCase,
     required this.toggleUserStatusUseCase,
     required this.toggleMultiDeviceUseCase,
+    required this.changeUserPasswordUseCase,
     required this.addWeightUseCase,
     required this.getUserWeightHistoryUseCase,
     required this.toggleScreenshotUseCase,
@@ -461,6 +464,29 @@ class UsersController extends ChangeNotifier {
 
   Future<void> refreshUserData(String userId) async {
     await loadUsers(refresh: true);
+  }
+
+  // ✅ 🔐 تغيير كلمة مرور المستخدم (من الأدمن) — بدون تسجيل خروج المستخدم
+  Future<bool> changeUserPassword(String userId, String newPassword) async {
+    _startAction();
+
+    final result = await changeUserPasswordUseCase(
+      int.parse(userId),
+      newPassword,
+    );
+
+    return result.fold(
+      (failure) {
+        _error = failure.message;
+        _finishAction();
+        return false;
+      },
+      (_) {
+        _successMessage = 'تم تغيير كلمة المرور بنجاح';
+        _finishAction();
+        return true;
+      },
+    );
   }
 
   // ✅ 🛠️ Helper methods

@@ -4,6 +4,7 @@ import 'package:admin_dashboard/features/users/data/repositories/user_repository
 import 'package:admin_dashboard/features/users/domain/repositories/user_repository.dart';
 import 'package:admin_dashboard/features/users/domain/usecases/add_user.dart';
 import 'package:admin_dashboard/features/users/domain/usecases/add_weight.dart';
+import 'package:admin_dashboard/features/users/domain/usecases/change_user_password.dart';
 import 'package:admin_dashboard/features/users/domain/usecases/delete_user.dart';
 import 'package:admin_dashboard/features/users/domain/usecases/extend_subscription.dart';
 import 'package:admin_dashboard/features/users/domain/usecases/get_subscriptions.dart';
@@ -54,6 +55,7 @@ Future<void> init() async {
   sl.registerLazySingleton(() => AddWeight(sl())); // ✅ تسجيل AddWeight
   sl.registerLazySingleton(() => GetUserWeightHistory(sl()));
   sl.registerLazySingleton(() => ToggleScreenshot(sl()));
+  sl.registerLazySingleton(() => ChangeUserPassword(sl()));
 
   // ✅ Controllers
   sl.registerFactory(
@@ -69,6 +71,7 @@ Future<void> init() async {
       addWeightUseCase: sl(), // ✅ إضافة
       getUserWeightHistoryUseCase: sl(),
       toggleScreenshotUseCase: sl(),
+      changeUserPasswordUseCase: sl(),
     ),
   );
 }

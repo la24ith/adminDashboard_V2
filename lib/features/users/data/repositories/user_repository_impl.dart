@@ -624,4 +624,39 @@ class UserRepositoryImpl implements UserRepository {
       return Left(Failure(message: e.toString()));
     }
   }
+
+  // ✅ تغيير كلمة مرور المستخدم (من الأدمن) — بدون إلغاء الجلسات الحالية
+  @override
+  Future<Either<Failure, void>> changeUserPassword(
+    int userId,
+    String newPassword,
+  ) async {
+    try {
+      final response = await dio.put(
+        '/api/admin/users/$userId/password',
+        data: {
+          'new_password': newPassword,
+          'new_password_confirmation': newPassword,
+        },
+      );
+
+      if (response.statusCode != 200 && response.statusCode != 204) {
+        return Left(Failure(
+          message: 'فشل تغيير كلمة المرور',
+          statusCode: response.statusCode,
+        ));
+      }
+
+      // لا حاجة لمسح الكاش هنا لأن كلمة المرور لا تُخزَّن ضمن بيانات المستخدم المؤقتة
+      return const Right(null);
+    } on DioException catch (e) {
+      return Left(Failure(
+        message: _handleDioError(e),
+        statusCode: e.response?.statusCode,
+        errors: e.response?.data,
+      ));
+    } catch (e) {
+      return Left(Failure(message: e.toString()));
+    }
+  }
 }

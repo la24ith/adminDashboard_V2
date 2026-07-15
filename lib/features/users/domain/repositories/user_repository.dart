@@ -101,4 +101,10 @@ abstract class UserRepository {
   });
   Future<Either<Failure, void>> toggleScreenshot(
       int userId, bool currentStatus);
+
+  // ✅ تغيير كلمة مرور المستخدم (من الأدمن) — بدون تسجيل خروج
+  Future<Either<Failure, void>> changeUserPassword(
+    int userId,
+    String newPassword,
+  );
 }

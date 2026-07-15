@@ -159,6 +159,11 @@ class _UserDetailsPageState extends State<UserDetailsPage>
             tooltip: 'تعديل المستخدم',
           ),
           IconButton(
+            icon: const Icon(Icons.lock_reset, color: AppColors.warning),
+            onPressed: () => _showChangePasswordDialog(context, user),
+            tooltip: 'تغيير كلمة المرور',
+          ),
+          IconButton(
             icon: const Icon(Icons.refresh, color: AppColors.info),
             onPressed: () => _refreshAllData(),
             tooltip: 'تحديث البيانات',
@@ -1148,6 +1153,179 @@ class _UserDetailsPageState extends State<UserDetailsPage>
         );
       }
     }
+  }
+
+  // ✅ 🔐 تغيير كلمة مرور المستخدم
+  void _showChangePasswordDialog(
+      BuildContext context, Map<String, dynamic> user) {
+    final formKey = GlobalKey<FormState>();
+    final passwordController = TextEditingController();
+    final confirmController = TextEditingController();
+    bool obscure1 = true;
+    bool obscure2 = true;
+    bool isSubmitting = false;
+    String? dialogError;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16)),
+              title: Row(
+                children: [
+                  const Icon(Icons.lock_reset, color: AppColors.warning),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'تغيير كلمة مرور: ${user['name'] ?? ''}',
+                      style: const TextStyle(fontSize: 16),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+              content: Form(
+                key: formKey,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      margin: const EdgeInsets.only(bottom: 12),
+                      decoration: BoxDecoration(
+                        color: AppColors.info.withOpacity(0.08),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Text(
+                        'لن يتم تسجيل خروج المستخدم من جلسته الحالية بعد تغيير كلمة المرور.',
+                        style:
+                            TextStyle(fontSize: 12, color: AppColors.info),
+                      ),
+                    ),
+                    TextFormField(
+                      controller: passwordController,
+                      obscureText: obscure1,
+                      decoration: InputDecoration(
+                        labelText: 'كلمة المرور الجديدة',
+                        border: const OutlineInputBorder(),
+                        suffixIcon: IconButton(
+                          icon: Icon(obscure1
+                              ? Icons.visibility_off
+                              : Icons.visibility),
+                          onPressed: () =>
+                              setDialogState(() => obscure1 = !obscure1),
+                        ),
+                      ),
+                      validator: (value) {
+                        if (value == null || value.isEmpty) {
+                          return 'هذا الحقل مطلوب';
+                        }
+                        if (value.length < 8) {
+                          return 'كلمة المرور يجب ألا تقل عن 8 أحرف';
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      controller: confirmController,
+                      obscureText: obscure2,
+                      decoration: InputDecoration(
+                        labelText: 'تأكيد كلمة المرور',
+                        border: const OutlineInputBorder(),
+                        suffixIcon: IconButton(
+                          icon: Icon(obscure2
+                              ? Icons.visibility_off
+                              : Icons.visibility),
+                          onPressed: () =>
+                              setDialogState(() => obscure2 = !obscure2),
+                        ),
+                      ),
+                      validator: (value) {
+                        if (value != passwordController.text) {
+                          return 'كلمتا المرور غير متطابقتين';
+                        }
+                        return null;
+                      },
+                    ),
+                    if (dialogError != null) ...[
+                      const SizedBox(height: 12),
+                      Text(
+                        dialogError!,
+                        style: const TextStyle(
+                            color: AppColors.error, fontSize: 12),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: isSubmitting
+                      ? null
+                      : () => Navigator.pop(dialogContext),
+                  child: const Text('إلغاء'),
+                ),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.warning),
+                  onPressed: isSubmitting
+                      ? null
+                      : () async {
+                          if (!formKey.currentState!.validate()) return;
+
+                          setDialogState(() {
+                            isSubmitting = true;
+                            dialogError = null;
+                          });
+
+                          final controller = _getUsersController();
+                          final success = await controller.changeUserPassword(
+                            user['id'].toString(),
+                            passwordController.text,
+                          );
+
+                          if (success) {
+                            if (dialogContext.mounted) {
+                              Navigator.pop(dialogContext);
+                            }
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(controller.successMessage ??
+                                      'تم تغيير كلمة المرور بنجاح'),
+                                  backgroundColor: AppColors.success,
+                                ),
+                              );
+                            }
+                          } else {
+                            setDialogState(() {
+                              isSubmitting = false;
+                              dialogError =
+                                  controller.error ?? 'فشل تغيير كلمة المرور';
+                            });
+                          }
+                        },
+                  child: isSubmitting
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2, color: Colors.white),
+                        )
+                      : const Text('تغيير كلمة المرور'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
   }
 
   // ✅ تعديل الاشتراك
