@@ -635,10 +635,14 @@ class UserRepositoryImpl implements UserRepository {
       final response = await dio.put(
         '/api/admin/users/$userId/password',
         data: {
-          'new_password': newPassword,
-          'new_password_confirmation': newPassword,
+          'password': newPassword,
+          'password_confirmation': newPassword,
         },
       );
+
+      // 🔍 DEBUG مؤقت — احذفه بعد التشخيص
+      debugPrint('🔐 Change password status: ${response.statusCode}');
+      debugPrint('🔐 Change password body: ${response.data}');
 
       if (response.statusCode != 200 && response.statusCode != 204) {
         return Left(Failure(
@@ -650,12 +654,19 @@ class UserRepositoryImpl implements UserRepository {
       // لا حاجة لمسح الكاش هنا لأن كلمة المرور لا تُخزَّن ضمن بيانات المستخدم المؤقتة
       return const Right(null);
     } on DioException catch (e) {
+      // 🔍 DEBUG مؤقت — احذفه بعد التشخيص
+      debugPrint('❌ Change password DioException: ${e.response?.statusCode}');
+      debugPrint('❌ Change password error body: ${e.response?.data}');
+      debugPrint('❌ Change password error type: ${e.type}');
+      debugPrint('❌ Change password raw message: ${e.message}');
+
       return Left(Failure(
         message: _handleDioError(e),
         statusCode: e.response?.statusCode,
         errors: e.response?.data,
       ));
     } catch (e) {
+      debugPrint('❌ Change password unknown error: $e');
       return Left(Failure(message: e.toString()));
     }
   }
