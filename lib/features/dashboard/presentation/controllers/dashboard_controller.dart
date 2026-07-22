@@ -115,6 +115,15 @@ class DashboardController extends ChangeNotifier {
     return 'حدث خطأ غير متوقع أثناء تحميل البيانات، يرجى المحاولة مرة أخرى';
   }
 
+  /// ✅ تحويل آمن لأي قيمة قادمة من الـ API (num أو String أو null)
+  /// يمنع انهيار الواجهة إذا أرجع الخادم الأرقام كنصوص (String)
+  num _toNum(dynamic value) {
+    if (value == null) return 0;
+    if (value is num) return value;
+    if (value is String) return num.tryParse(value) ?? 0;
+    return 0;
+  }
+
   Future<void> refreshDashboard() async {
     await _fetchDashboardData();
   }
@@ -175,11 +184,13 @@ class DashboardController extends ChangeNotifier {
   /// ✅ حساب النشاط الأسبوعي من البيانات الموجودة
   List<Map<String, dynamic>> _calculateWeeklyActivity(
       Map<String, dynamic> data) {
-    final totalUsers = (data['total_users'] ?? 0).toInt();
-    final totalPosts = (data['total_posts'] ?? 0).toInt();
+    // ✅ ملاحظة: total_posts غير موجود في استجابة الـ API حسب تأكيد الباك اند،
+    // لذا تم استبداله بـ today_posts (موجود ومؤكد كـ integer) لحساب النشاط
+    final totalUsers = _toNum(data['total_users']).toInt();
+    final todayPosts = _toNum(data['today_posts']).toInt();
 
-    // ✅ استخدام المعدل بين المستخدمين والمنشورات
-    final baseValue = ((totalUsers + totalPosts) / 2).toInt();
+    // ✅ استخدام المعدل بين المستخدمين ومنشورات اليوم
+    final baseValue = ((totalUsers + todayPosts) / 2).toInt();
 
     // ✅ توزيع النشاط على أيام الأسبوع بنسب مئوية مختلفة
     final days = ['أحد', 'اثنين', 'ثلاثاء', 'أربعاء', 'خميس', 'جمعة', 'سبت'];

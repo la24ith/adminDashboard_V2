@@ -27,6 +27,7 @@ class ReportsController extends ChangeNotifier {
   bool _isLoadingIdealWeights = false;
   bool _isLoadingExpiredSubs = false;
   bool _isLoadingUsers = false;
+  bool _isLoadingDashboardStats = false;
 
   // حالات التصدير
   bool _isExportingPDF = false;
@@ -52,6 +53,7 @@ class ReportsController extends ChangeNotifier {
   bool get isLoadingIdealWeights => _isLoadingIdealWeights;
   bool get isLoadingExpiredSubs => _isLoadingExpiredSubs;
   bool get isLoadingUsers => _isLoadingUsers;
+  bool get isLoadingDashboardStats => _isLoadingDashboardStats;
 
   bool get isExportingPDF => _isExportingPDF;
   bool get isExportingExcel => _isExportingExcel;
@@ -200,6 +202,7 @@ class ReportsController extends ChangeNotifier {
     loadIdealWeightsReport();
     loadExpiredSubsReport();
     loadUsersList();
+    _loadDashboardStats();
   }
 
   // 📊 57 - تقرير الالتزامات (Reports commitments)
@@ -215,31 +218,16 @@ class ReportsController extends ChangeNotifier {
         final responseData = response.data;
 
         // ✅ معالجة هيكل Pagination
+        // ملاحظة: لم نعد نستخرج total_users/avg_commitment/achieved_goal من هنا،
+        // لأن هذا الـ endpoint مُقسَّم لصفحات (paginated) وأول عنصر فيه لا يمثل
+        // الإجمالي الحقيقي لكل المستخدمين. الأرقام الإجمالية تُجلب الآن حصرياً
+        // من نفس endpoint الداشبورد عبر _loadDashboardStats() لضمان التطابق.
         if (responseData.containsKey('data')) {
           final dataList = responseData['data'] as List;
-
-          if (dataList.isNotEmpty) {
-            // ✅ أخذ أول عنصر فقط (لأن التقرير يعيد مصفوفة)
-            final firstItem = dataList.first as Map<String, dynamic>;
-            _commitmentsData = firstItem;
-
-            // ✅ استخراج القيم من العنصر الأول مباشرة
-            _totalUsers = firstItem['total_users'] ?? 0;
-            _avgCommitment = (firstItem['avg_commitment'] ?? 0.0).toDouble();
-            _achievedGoal = firstItem['achieved_goal'] ?? 0;
-          } else {
-            // ✅ البيانات فارغة
-            _commitmentsData = {};
-            _totalUsers = 0;
-            _avgCommitment = 0.0;
-            _achievedGoal = 0;
-          }
+          _commitmentsData =
+              dataList.isNotEmpty ? dataList.first as Map<String, dynamic> : {};
         } else {
-          // ✅ استجابة بدون هيكل pagination
           _commitmentsData = responseData;
-          _totalUsers = responseData['total_users'] ?? 0;
-          _avgCommitment = (responseData['avg_commitment'] ?? 0.0).toDouble();
-          _achievedGoal = responseData['achieved_goal'] ?? 0;
         }
       } else {
         throw Exception('فشل تحميل تقرير الالتزام');
@@ -248,9 +236,6 @@ class ReportsController extends ChangeNotifier {
       _error = e.toString();
       debugPrint('❌ Commitments error: $e');
       _commitmentsData = {};
-      _totalUsers = 0;
-      _avgCommitment = 0.0;
-      _achievedGoal = 0;
     } finally {
       _isLoadingCommitments = false;
       notifyListeners();
@@ -307,16 +292,28 @@ class ReportsController extends ChangeNotifier {
         final responseData = response.data;
 
         // ✅ معالجة هيكل Pagination
+        // ملاحظة: استخدمنا responseData['total'] (حقل Laravel القياسي للعدد
+        // الإجمالي عبر كل الصفحات) بدل dataList.length التي كانت تُرجع فقط
+        // عدد عناصر الصفحة الحالية (مثلاً 15) حتى لو كان الإجمالي الحقيقي أكبر.
         if (responseData.containsKey('data')) {
           final dataList = responseData['data'] as List;
+          final total = _toNum(responseData['total'] ?? dataList.length).toInt();
           _idealWeightsData = {
             'users': dataList,
-            'total': dataList.length,
+            'total': total,
           };
+          _achievedGoal = total;
         } else if (responseData.containsKey('users')) {
-          _idealWeightsData = responseData;
+          final usersList = responseData['users'] as List?;
+          final total = _toNum(responseData['total'] ?? usersList?.length ?? 0).toInt();
+          _idealWeightsData = {
+            'users': usersList ?? [],
+            'total': total,
+          };
+          _achievedGoal = total;
         } else {
           _idealWeightsData = {'users': [], 'total': 0};
+          _achievedGoal = 0;
         }
       } else {
         throw Exception('فشل تحميل تقرير الوزن المثالي');
@@ -325,6 +322,7 @@ class ReportsController extends ChangeNotifier {
       _error = e.toString();
       debugPrint('❌ Ideal weights error: $e');
       _idealWeightsData = {'users': [], 'total': 0};
+      _achievedGoal = 0;
     } finally {
       _isLoadingIdealWeights = false;
       notifyListeners();
@@ -344,19 +342,25 @@ class ReportsController extends ChangeNotifier {
         final responseData = response.data;
 
         // ✅ معالجة هيكل Pagination
+        // ملاحظة: 'total' هنا يُستخدم فقط لعرض "+ N مستخدمين آخرين" أسفل القائمة.
+        // رقم بطاقة "اشتراكات منتهية" (KPI) لم يعد يُشتق من هنا؛ يأتي حصرياً
+        // من نفس endpoint الداشبورد عبر _loadDashboardStats() لضمان التطابق.
         if (responseData.containsKey('data')) {
           final dataList = responseData['data'] as List;
+          final total = _toNum(responseData['total'] ?? dataList.length).toInt();
           _expiredSubsData = {
             'users': dataList,
-            'total': dataList.length,
+            'total': total,
           };
-          _expiredSubscriptions = dataList.length;
         } else if (responseData.containsKey('users')) {
-          _expiredSubsData = responseData;
-          _expiredSubscriptions = (responseData['users'] as List?)?.length ?? 0;
+          final usersList = responseData['users'] as List?;
+          final total = _toNum(responseData['total'] ?? usersList?.length ?? 0).toInt();
+          _expiredSubsData = {
+            'users': usersList ?? [],
+            'total': total,
+          };
         } else {
           _expiredSubsData = {'users': [], 'total': 0};
-          _expiredSubscriptions = 0;
         }
       } else {
         throw Exception('فشل تحميل تقرير الاشتراكات المنتهية');
@@ -365,7 +369,6 @@ class ReportsController extends ChangeNotifier {
       _error = e.toString();
       debugPrint('❌ Expired subs error: $e');
       _expiredSubsData = {'users': [], 'total': 0};
-      _expiredSubscriptions = 0;
     } finally {
       _isLoadingExpiredSubs = false;
       notifyListeners();
@@ -422,6 +425,42 @@ class ReportsController extends ChangeNotifier {
       loadIdealWeightsReport(),
       loadExpiredSubsReport(),
       loadUsersList(),
+      _loadDashboardStats(),
     ]);
+  }
+
+  /// ✅ تحويل آمن لأي قيمة قادمة من الـ API (num أو String أو null)
+  num _toNum(dynamic value) {
+    if (value == null) return 0;
+    if (value is num) return value;
+    if (value is String) return num.tryParse(value) ?? 0;
+    return 0;
+  }
+
+  /// ✅ جلب الإحصائيات الإجمالية من نفس endpoint الداشبورد (وليس من تقرير
+  /// الالتزامات المُقسَّم إلى صفحات). هذا يضمن أن أرقام "إجمالي المستخدمين"،
+  /// "معدل الالتزام"، و"اشتراكات منتهية" في صفحة التقارير تُطابق دائماً
+  /// نفس الأرقام الظاهرة في الداشبورد الرئيسي، لأنها تأتي من نفس المصدر تماماً.
+  Future<void> _loadDashboardStats() async {
+    _isLoadingDashboardStats = true;
+    notifyListeners();
+
+    try {
+      final dio = DioClient.instance;
+      final response = await dio.get(ApiConstants.adminDashboard);
+
+      if (response.statusCode == 200) {
+        final stats = response.data['stats'] ?? response.data;
+        _totalUsers = _toNum(stats['total_users']).toInt();
+        _avgCommitment = _toNum(stats['commitment_rate']).toDouble();
+        _expiredSubscriptions = _toNum(stats['expired_subscriptions']).toInt();
+      }
+    } catch (e) {
+      debugPrint('❌ Dashboard stats error (reports page): $e');
+      // ✅ نُبقي القيم القديمة (fallback) بدل ترك الشاشة فارغة أو صفر فجأة
+    } finally {
+      _isLoadingDashboardStats = false;
+      notifyListeners();
+    }
   }
 }

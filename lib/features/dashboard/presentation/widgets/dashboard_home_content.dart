@@ -92,6 +92,10 @@ class _DashboardHomeContentState extends State<DashboardHomeContent> {
             ),
             const SizedBox(height: 24),
 
+            // ✅ توزيع فئات المستخدمين (user_segments)
+            _buildUserSegmentsChart(data),
+            const SizedBox(height: 24),
+
             // Recent Activity
             _buildRecentActivity(data),
             const SizedBox(height: 24),
@@ -164,56 +168,70 @@ class _DashboardHomeContentState extends State<DashboardHomeContent> {
     );
   }
 
-Widget _buildStatsGrid(Map<String, dynamic> data, bool isSmallScreen) {
-  final stats = [
-    _StatItem(
-      title: 'إجمالي المستخدمين',
-      value: _formatNumber(data['total_users'] ?? 0),
-      icon: Icons.people_outline,
-      color: AppColors.primary,
-    ),
-    _StatItem(
-      title: 'الاشتراكات النشطة',
-      value: _formatNumber(data['active_subscriptions'] ?? 0),
-      icon: Icons.check_circle_outline,
-      color: AppColors.success,
-    ),
-    _StatItem(
-      title: 'منشورات اليوم',
-      value: _formatNumber(data['today_posts'] ?? 0),
-      icon: Icons.article_outlined,
-      color: AppColors.warning,
-    ),
-    _StatItem(
-      title: 'معدل الالتزام',
-      value: '${data['commitment_rate'] ?? 0}%',
-      icon: Icons.trending_up,
-      color: AppColors.info,
-    ),
-  ];
+  Widget _buildStatsGrid(Map<String, dynamic> data, bool isSmallScreen) {
+    final stats = [
+      _StatItem(
+        title: 'إجمالي المستخدمين',
+        value: _formatNumber(data['total_users']),
+        icon: Icons.people_outline,
+        color: AppColors.primary,
+      ),
+      _StatItem(
+        title: 'الاشتراكات النشطة',
+        value: _formatNumber(data['active_subscriptions']),
+        icon: Icons.check_circle_outline,
+        color: AppColors.success,
+      ),
+      _StatItem(
+        title: 'الاشتراكات المنتهية',
+        value: _formatNumber(data['expired_subscriptions']),
+        icon: Icons.remove_circle_outline,
+        color: AppColors.error,
+      ),
+      _StatItem(
+        title: 'منشورات اليوم',
+        value: _formatNumber(data['today_posts']),
+        icon: Icons.article_outlined,
+        color: AppColors.warning,
+      ),
+      _StatItem(
+        title: 'معدل الالتزام',
+        value: '${_toNum(data['commitment_rate']).toInt()}%',
+        icon: Icons.trending_up,
+        color: AppColors.info,
+      ),
+    ];
 
-  if (isSmallScreen) {
-    return Column(
-      children: [
-        Row(children: [Expanded(child: _StatCard(item: stats[0])), const SizedBox(width: 12), Expanded(child: _StatCard(item: stats[1]))]),
-        const SizedBox(height: 12),
-        Row(children: [Expanded(child: _StatCard(item: stats[2])), const SizedBox(width: 12), Expanded(child: _StatCard(item: stats[3]))]),
-      ],
-    );
-  } else {
-    return Row(
-      children: [
-        Expanded(child: _StatCard(item: stats[0])),
-        const SizedBox(width: 16),
-        Expanded(child: _StatCard(item: stats[1])),
-        const SizedBox(width: 16),
-        Expanded(child: _StatCard(item: stats[2])),
-        const SizedBox(width: 16),
-        Expanded(child: _StatCard(item: stats[3])),
-      ],
+    // ✅ توزيع تلقائي لعدد البطاقات في كل صف حسب العرض المتاح،
+    // بدل الاعتماد على فهارس ثابتة (يدعم إضافة/حذف بطاقات مستقبلاً دون كسر التخطيط)
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // ✅ حماية: أحياناً يعطي الأب عرضاً صفرياً أو سالباً مؤقتاً أثناء أول رسم
+        // للواجهة أو أثناء تغيير حجم النافذة/طي السايدبار — قبل أن يستقر التخطيط
+        if (!constraints.maxWidth.isFinite || constraints.maxWidth <= 0) {
+          return const SizedBox.shrink();
+        }
+
+        const spacing = 12.0;
+        const minCardWidth = 150.0;
+        int perRow = (constraints.maxWidth / (minCardWidth + spacing)).floor();
+        perRow = perRow.clamp(2, stats.length);
+        final rawItemWidth =
+            (constraints.maxWidth - spacing * (perRow - 1)) / perRow;
+        // ✅ لا نسمح أبداً بعرض سالب (كان هذا سبب انهيار BoxConstraints)
+        final itemWidth = rawItemWidth.clamp(0.0, constraints.maxWidth);
+
+        return Wrap(
+          spacing: spacing,
+          runSpacing: spacing,
+          children: stats
+              .map((s) => SizedBox(width: itemWidth, child: _StatCard(item: s)))
+              .toList(),
+        );
+      },
     );
   }
-}
+
   // ✅ النشاط الأسبوعي مع بيانات حقيقية من API
   Widget _buildActivityChart(List<Map<String, dynamic>> weeklyData) {
     return FadeInUp(
@@ -223,20 +241,25 @@ Widget _buildStatsGrid(Map<String, dynamic> data, bool isSmallScreen) {
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(16),
-          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 12)],
+          boxShadow: [
+            BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 12)
+          ],
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('📊 النشاط الأسبوعي', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            const Text('📊 النشاط الأسبوعي',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
             const SizedBox(height: 16),
             SizedBox(
               height: 200,
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceAround,
                 children: weeklyData.map((item) {
-                  final percentage = (item['count'] ?? 50).toDouble();
-                  return _buildBarChartItem(item['day'], percentage.clamp(0, 100));
+                  final percentage = _toNum(item['count']).toDouble();
+                  final day = (item['day'] ?? '').toString();
+                  return _buildBarChartItem(
+                      day, percentage.clamp(0.0, 100.0).toDouble());
                 }).toList(),
               ),
             ),
@@ -259,73 +282,247 @@ Widget _buildStatsGrid(Map<String, dynamic> data, bool isSmallScreen) {
           ),
         ),
         const SizedBox(height: 8),
-        Text(day, style: const TextStyle(fontSize: 10, color: AppColors.textTertiary)),
+        Text(day,
+            style:
+                const TextStyle(fontSize: 10, color: AppColors.textTertiary)),
       ],
     );
   }
 
-Widget _buildEngagementCard(Map<String, dynamic> data) {
-  final commitmentRate = (data['commitment_rate'] ?? 0).toDouble();
-  final engagementRate = commitmentRate / 100;
+  Widget _buildEngagementCard(Map<String, dynamic> data) {
+    final commitmentRate = _toNum(data['commitment_rate']).toDouble();
+    final engagementRate = commitmentRate / 100;
 
-  return FadeInUp(
-    duration: const Duration(milliseconds: 500),
-    child: Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 12)],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text('🎯 نسبة الالتزام', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 16),
-          Center(
-            child: Stack(
-              alignment: Alignment.center,
-              children: [
-                SizedBox(
-                  width: 120,
-                  height: 120,
-                  child: CircularProgressIndicator(
-                    value: engagementRate.clamp(0.0, 1.0),
-                    strokeWidth: 12,
-                    backgroundColor: AppColors.surfaceVariant,
-                    color: AppColors.success,
+    return FadeInUp(
+      duration: const Duration(milliseconds: 500),
+      child: Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 12)
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('🎯 نسبة الالتزام',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 16),
+            Center(
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  SizedBox(
+                    width: 120,
+                    height: 120,
+                    child: CircularProgressIndicator(
+                      value: engagementRate.clamp(0.0, 1.0),
+                      strokeWidth: 12,
+                      backgroundColor: AppColors.surfaceVariant,
+                      color: AppColors.success,
+                    ),
                   ),
-                ),
-                Column(
-                  children: [
-                    Text('${commitmentRate.toInt()}%', style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
-                    const Text('التزام', style: TextStyle(fontSize: 12, color: AppColors.textTertiary)),
-                  ],
-                ),
+                  Column(
+                    children: [
+                      Text('${commitmentRate.toInt()}%',
+                          style: const TextStyle(
+                              fontSize: 24, fontWeight: FontWeight.bold)),
+                      const Text('التزام',
+                          style: TextStyle(
+                              fontSize: 12, color: AppColors.textTertiary)),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                _buildEngagementStat('إجمالي المستخدمين',
+                    _formatNumber(data['total_users'] ?? 0)),
+                _buildEngagementStat(
+                    'منشورات اليوم', _formatNumber(data['today_posts'] ?? 0)),
+                _buildEngagementStat('اشتراكات نشطة',
+                    _formatNumber(data['active_subscriptions'] ?? 0)),
               ],
             ),
-          ),
-          const SizedBox(height: 16),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              _buildEngagementStat('إجمالي المستخدمين', _formatNumber(data['total_users'] ?? 0)),
-              _buildEngagementStat('منشورات اليوم', _formatNumber(data['today_posts'] ?? 0)),
-              _buildEngagementStat('اشتراكات نشطة', _formatNumber(data['active_subscriptions'] ?? 0)),
-            ],
-          ),
-        ],
+          ],
+        ),
       ),
-    ),
-  );
-}
+    );
+  }
+
   Widget _buildEngagementStat(String label, String value) {
     return Column(
       children: [
-        Text(value, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-        Text(label, style: const TextStyle(fontSize: 11, color: AppColors.textTertiary)),
+        Text(value,
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+        Text(label,
+            style:
+                const TextStyle(fontSize: 11, color: AppColors.textTertiary)),
       ],
     );
+  }
+
+  // ✅ رسم بياني دائري لتوزيع فئات المستخدمين (user_segments)
+  Widget _buildUserSegmentsChart(Map<String, dynamic> data) {
+    final rawSegments = data['user_segments'];
+
+    // لا نعرض الكرت إطلاقاً إذا لم يرسل الباك اند هذا الحقل بعد
+    if (rawSegments == null || rawSegments is! Map || rawSegments.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    final entries = rawSegments.entries.toList();
+    final total = entries.fold<num>(0, (sum, e) => sum + _toNum(e.value));
+
+    return FadeInUp(
+      duration: const Duration(milliseconds: 550),
+      child: Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 12)
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('👥 توزيع فئات المستخدمين',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 16),
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final isRowLayout = constraints.maxWidth > 500;
+
+                final chart = SizedBox(
+                  width: 180,
+                  height: 180,
+                  child: PieChart(
+                    PieChartData(
+                      sectionsSpace: 2,
+                      centerSpaceRadius: 40,
+                      sections: List.generate(entries.length, (i) {
+                        final value = _toNum(entries[i].value).toDouble();
+                        final color =
+                            _getSegmentColor(entries[i].key.toString(), i);
+                        final percent = total > 0 ? (value / total * 100) : 0.0;
+                        return PieChartSectionData(
+                          value: value,
+                          color: color,
+                          radius: 45,
+                          title: '${percent.toStringAsFixed(0)}%',
+                          titleStyle: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        );
+                      }),
+                    ),
+                  ),
+                );
+
+                final legend = Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: List.generate(entries.length, (i) {
+                    final color =
+                        _getSegmentColor(entries[i].key.toString(), i);
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 6),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 10,
+                            height: 10,
+                            decoration: BoxDecoration(
+                                color: color, shape: BoxShape.circle),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              _formatSegmentLabel(entries[i].key.toString()),
+                              style: const TextStyle(fontSize: 13),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            _formatNumber(entries[i].value),
+                            style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                                color: AppColors.textTertiary),
+                          ),
+                        ],
+                      ),
+                    );
+                  }),
+                );
+
+                if (isRowLayout) {
+                  return Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      chart,
+                      const SizedBox(width: 24),
+                      Expanded(child: legend),
+                    ],
+                  );
+                } else {
+                  return Column(
+                    children: [
+                      Center(child: chart),
+                      const SizedBox(height: 16),
+                      legend,
+                    ],
+                  );
+                }
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// ✅ التطبيق مخصص للإناث فقط، لذا كل فئات الدائرة تُلوَّن بدرجات من اللون الزهري (pink)
+  Color _getSegmentColor(String key, int index) {
+    final pinkShades = [
+      const Color(0xFFEC4899), // pink 500
+      const Color(0xFFF472B6), // pink 400
+      const Color(0xFFDB2777), // pink 600
+      const Color(0xFFF9A8D4), // pink 300
+      const Color(0xFFBE185D), // pink 700
+      const Color(0xFFFBCFE8), // pink 200
+    ];
+    return pinkShades[index % pinkShades.length];
+  }
+
+  /// ✅ ترجمة أسماء فئات المستخدمين الشائعة إلى العربية
+  /// (fallback لعرض المفتاح كما هو لو لم يكن معروفاً)
+  /// (fallback لعرض المفتاح كما هو لو لم يكن معروفاً)
+  String _formatSegmentLabel(String key) {
+    const labels = {
+      'new': 'مستخدمون جدد',
+      'active': 'نشطون',
+      'inactive': 'غير نشطين',
+      'premium': 'مميزون',
+      'free': 'مجانيون',
+      'churned': 'منسحبون',
+      'general': 'عام',
+      'diabetic': 'سكري',
+      'breastfeeding': 'مرضعات',
+      'weight_loss': 'فقدان وزن',
+      'weight_gain': 'زيادة وزن',
+    };
+    return labels[key.toLowerCase()] ?? key;
   }
 
   Widget _buildRecentActivity(Map<String, dynamic> data) {
@@ -338,12 +535,15 @@ Widget _buildEngagementCard(Map<String, dynamic> data) {
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(16),
-          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 12)],
+          boxShadow: [
+            BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 12)
+          ],
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('🕐 آخر النشاطات', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            const Text('🕐 آخر النشاطات',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
             const SizedBox(height: 16),
             if (activities.isEmpty)
               const Padding(
@@ -391,9 +591,14 @@ Widget _buildEngagementCard(Map<String, dynamic> data) {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(text, style: const TextStyle(fontSize: 13), maxLines: 1, overflow: TextOverflow.ellipsis),
+                Text(text,
+                    style: const TextStyle(fontSize: 13),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis),
                 const SizedBox(height: 4),
-                Text(time, style: const TextStyle(fontSize: 11, color: AppColors.textTertiary)),
+                Text(time,
+                    style: const TextStyle(
+                        fontSize: 11, color: AppColors.textTertiary)),
               ],
             ),
           ),
@@ -411,12 +616,15 @@ Widget _buildEngagementCard(Map<String, dynamic> data) {
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(16),
-          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 12)],
+          boxShadow: [
+            BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 12)
+          ],
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('⚡ إجراءات سريعة', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            const Text('⚡ إجراءات سريعة',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
             const SizedBox(height: 16),
             Wrap(
               spacing: 12,
@@ -481,7 +689,9 @@ Widget _buildEngagementCard(Map<String, dynamic> data) {
         onSave: (userData) async {
           // سيتم ربطه مع UsersController لاحقاً
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('سيتم إضافة المستخدم قريباً'), backgroundColor: AppColors.success),
+            const SnackBar(
+                content: Text('سيتم إضافة المستخدم قريباً'),
+                backgroundColor: AppColors.success),
           );
         },
       ),
@@ -502,28 +712,48 @@ Widget _buildEngagementCard(Map<String, dynamic> data) {
 
   IconData _getActivityIcon(String? type) {
     switch (type) {
-      case 'user': return Icons.person_add;
-      case 'post': return Icons.article;
-      case 'notification': return Icons.notifications;
-      case 'ad': return Icons.ads_click;
-      default: return Icons.circle_notifications;
+      case 'user':
+        return Icons.person_add;
+      case 'post':
+        return Icons.article;
+      case 'notification':
+        return Icons.notifications;
+      case 'ad':
+        return Icons.ads_click;
+      default:
+        return Icons.circle_notifications;
     }
   }
 
   Color _getActivityColor(String? type) {
     switch (type) {
-      case 'user': return AppColors.success;
-      case 'post': return AppColors.info;
-      case 'notification': return AppColors.warning;
-      case 'ad': return AppColors.accent;
-      default: return AppColors.primary;
+      case 'user':
+        return AppColors.success;
+      case 'post':
+        return AppColors.info;
+      case 'notification':
+        return AppColors.warning;
+      case 'ad':
+        return AppColors.accent;
+      default:
+        return AppColors.primary;
     }
   }
 
-  String _formatNumber(num number) {
-    if (number >= 1000000) return '${(number / 1000000).toStringAsFixed(1)}M';
-    if (number >= 1000) return '${(number / 1000).toStringAsFixed(1)}K';
-    return number.toString();
+  String _formatNumber(dynamic number) {
+    final n = _toNum(number);
+    if (n >= 1000000) return '${(n / 1000000).toStringAsFixed(1)}M';
+    if (n >= 1000) return '${(n / 1000).toStringAsFixed(1)}K';
+    return n.toInt().toString();
+  }
+
+  /// ✅ تحويل آمن لأي قيمة قادمة من الـ API (num أو String أو null)
+  /// يمنع انهيار الواجهة إذا أرجع الخادم الأرقام كنصوص (String)
+  num _toNum(dynamic value) {
+    if (value == null) return 0;
+    if (value is num) return value;
+    if (value is String) return num.tryParse(value) ?? 0;
+    return 0;
   }
 }
 
@@ -533,7 +763,11 @@ class _StatItem {
   final IconData icon;
   final Color color;
 
-  _StatItem({required this.title, required this.value, required this.icon, required this.color});
+  _StatItem(
+      {required this.title,
+      required this.value,
+      required this.icon,
+      required this.color});
 }
 
 class _StatCard extends StatelessWidget {
@@ -543,8 +777,12 @@ class _StatCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // ✅ استخراج الجزء الرقمي فقط من القيمة (تتجاهل %, K, M وأي رموز أخرى)
+    final numericMatch = RegExp(r'[\d.]+').firstMatch(item.value);
+    final targetValue = double.tryParse(numericMatch?.group(0) ?? '') ?? 0;
+
     return TweenAnimationBuilder(
-      tween: Tween<double>(begin: 0, end: double.tryParse(item.value) ?? 0),
+      tween: Tween<double>(begin: 0, end: targetValue),
       duration: const Duration(seconds: 1),
       curve: Curves.easeOutCubic,
       builder: (context, double val, child) {
@@ -553,7 +791,12 @@ class _StatCard extends StatelessWidget {
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(16),
-            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 12, offset: const Offset(0, 2))],
+            boxShadow: [
+              BoxShadow(
+                  color: Colors.black.withOpacity(0.04),
+                  blurRadius: 12,
+                  offset: const Offset(0, 2))
+            ],
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -563,15 +806,23 @@ class _StatCard extends StatelessWidget {
                 children: [
                   Container(
                     padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(color: item.color.withOpacity(0.1), borderRadius: BorderRadius.circular(10)),
+                    decoration: BoxDecoration(
+                        color: item.color.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(10)),
                     child: Icon(item.icon, size: 18, color: item.color),
                   ),
                 ],
               ),
               const SizedBox(height: 12),
-              Text(val.toInt().toString(), style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+              Text(
+                '${val.toInt()}${item.value.replaceAll(RegExp(r'[\d.]'), '')}',
+                style:
+                    const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+              ),
               const SizedBox(height: 4),
-              Text(item.title, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+              Text(item.title,
+                  style: const TextStyle(
+                      fontSize: 12, color: AppColors.textSecondary)),
             ],
           ),
         );

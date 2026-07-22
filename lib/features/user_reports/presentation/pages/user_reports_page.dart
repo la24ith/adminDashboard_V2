@@ -41,7 +41,8 @@ class _UserReportsPageContentState extends State<_UserReportsPageContent> {
     // ✅ حساب ما إذا كانت البيانات قيد التحميل
     final isLoadingData = controller.isLoadingCommitments ||
         controller.isLoadingIdealWeights ||
-        controller.isLoadingExpiredSubs;
+        controller.isLoadingExpiredSubs ||
+        controller.isLoadingDashboardStats;
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -60,7 +61,8 @@ class _UserReportsPageContentState extends State<_UserReportsPageContent> {
               const SizedBox(height: 24),
 
               // ✅ KPI Cards - معالجة Responsive بشكل أفضل
-              if (!controller.isLoadingCommitments)
+              if (!controller.isLoadingCommitments &&
+                  !controller.isLoadingDashboardStats)
                 _buildKPICards(controller, screenWidth)
               else
                 _buildKPISkeleton(isSmallScreen),
