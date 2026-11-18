@@ -34,10 +34,17 @@ jobs:
 
       - run: flutter --version
       - run: flutter pub get
-      - run: flutter build apk --release
+      # APK منفصل لكل نوع معالج بدل APK واحد كبير يحتوي الكل
+      # (مكتبة ffmpeg تجعل الـ APK الشامل حوالي 250 ميغا)
+      - run: flutter build apk --release --split-per-abi
 
-      - name: Rename APK
-        run: mv build/app/outputs/flutter-apk/app-release.apk "admin-dashboard-${GITHUB_REF_NAME////-}.apk"
+      - name: Rename APKs
+        run: |
+          name="admin-dashboard-${GITHUB_REF_NAME////-}"
+          cd build/app/outputs/flutter-apk
+          for abi in arm64-v8a armeabi-v7a x86_64; do
+            mv "app-$abi-release.apk" "$GITHUB_WORKSPACE/$name-$abi.apk"
+          done
 
       - uses: actions/upload-artifact@v4
         with:
