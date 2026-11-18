@@ -1,5 +1,3 @@
-import 'package:ffmpeg_kit_flutter_new/ffmpeg_kit.dart';
-import 'package:ffmpeg_kit_flutter_new/return_code.dart';
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:path_provider/path_provider.dart';
@@ -489,6 +487,11 @@ class PostsController extends ChangeNotifier {
     bool removeVideo = false,
     bool removeAudio = false,
   }) async {
+    // ✅ الملفات الجديدة تُجمع هنا ثم تُرفع كلها في طلب واحد بالشكل
+    // media[i][type] / media[i][file] (انظر _uploadMediaBatch). رفعها
+    // بنفس اسم الحقل `file` يجعل PHP يحتفظ بملف واحد فقط.
+    final pendingUploads = <_PendingUpload>[];
+
     // ==================== الصورة المصغّرة ====================
     if (thumbnailFile != null && !_isDisposed) {
       // ✅ إن وُجد عنصر صورة سابق في جدول media نحذفه أولاً قبل رفع
@@ -497,7 +500,7 @@ class PostsController extends ChangeNotifier {
         await _deleteMediaItem(existingThumbnailMediaId);
         if (_isDisposed) return;
       }
-      await _uploadMedia(postId, thumbnailFile, 'thumbnail');
+      pendingUploads.add(_PendingUpload('thumbnail', thumbnailFile));
     } else if (thumbnailUrl != null &&
         thumbnailUrl.isNotEmpty &&
         !_isDisposed) {
@@ -528,7 +531,7 @@ class PostsController extends ChangeNotifier {
         await _deleteMediaItem(existingVideoMediaId);
         if (_isDisposed) return;
       }
-      await _uploadMedia(postId, videoFile, 'video');
+      pendingUploads.add(_PendingUpload('video', videoFile));
     } else if (videoUrl != null && videoUrl.isNotEmpty && !_isDisposed) {
       // ✅ رابط فيديو خارجي (يوتيوب/فيميو/فيسبوك) يُنشأ أو يُحدَّث كعنصر
       // ضمن جدول media (POST أو PUT /api/admin/posts/media/{id})، وهذا
@@ -557,7 +560,7 @@ class PostsController extends ChangeNotifier {
         await _deleteMediaItem(existingAudioMediaId);
         if (_isDisposed) return;
       }
-      await _uploadMedia(postId, audioFile, 'audio');
+      pendingUploads.add(_PendingUpload('audio', audioFile));
     } else if (audioUrl != null && audioUrl.isNotEmpty && !_isDisposed) {
       if (existingAudioMediaId != null) {
         await _deleteMediaItem(existingAudioMediaId);
@@ -572,6 +575,11 @@ class PostsController extends ChangeNotifier {
         if (_isDisposed) return;
       }
       await _updatePostField(postId, 'audio_url', null);
+    }
+
+    // ==================== رفع كل الملفات الجديدة دفعة واحدة ====================
+    if (pendingUploads.isNotEmpty && !_isDisposed) {
+      await _uploadMediaBatch(postId, pendingUploads);
     }
   }
 
@@ -673,11 +681,25 @@ class PostsController extends ChangeNotifier {
         '🔍 Detecting MIME for: $filePath, type: $type, extension: $extension');
 
     if (type == 'audio') {
-      if (extension == 'mp3') return 'audio/mpeg';
-      if (extension == 'm4a') return 'audio/mp4';
-      if (extension == 'aac') return 'audio/aac';
-      if (extension == 'wav') return 'audio/wav';
-      return 'audio/mpeg';
+      // الصيغ التي يقبلها الخادم:
+      // mp3, wav, m4a, m4b, mp4, aac, ogg, oga, opus, 3gp, 3gpp, amr, wma, flac
+      const audioMimes = {
+        'mp3': 'audio/mpeg',
+        'wav': 'audio/wav',
+        'm4a': 'audio/mp4',
+        'm4b': 'audio/mp4',
+        'mp4': 'audio/mp4',
+        'aac': 'audio/aac',
+        'ogg': 'audio/ogg',
+        'oga': 'audio/ogg',
+        'opus': 'audio/opus',
+        '3gp': 'audio/3gpp',
+        '3gpp': 'audio/3gpp',
+        'amr': 'audio/amr',
+        'wma': 'audio/x-ms-wma',
+        'flac': 'audio/flac',
+      };
+      return audioMimes[extension] ?? 'audio/mpeg';
     }
 
     if (type == 'video') {
@@ -689,102 +711,73 @@ class PostsController extends ChangeNotifier {
     if (type == 'image') {
       if (extension == 'png') return 'image/png';
       if (extension == 'jpg' || extension == 'jpeg') return 'image/jpeg';
+      if (extension == 'webp') return 'image/webp';
+      if (extension == 'gif') return 'image/gif';
       return 'image/jpeg';
     }
 
     return 'application/octet-stream';
   }
 
-  // ✅ إصلاح: تحويل الصوت فقط (وليس جميع الملفات) مع التحقق من نجاح FFmpeg
-  Future<File> _convertAudioFile(File file) async {
-    final extension = file.path.split('.').last.toLowerCase();
+  /// يرفع كل الملفات الجديدة في طلب multipart واحد إلى
+  /// POST /api/admin/posts/{id}/media بالشكل:
+  ///   media[0][type] = image   media[0][file] = <ملف>
+  ///   media[1][type] = audio   media[1][file] = <ملف>
+  /// لا نضبط Content-Type يدوياً؛ Dio يضيف multipart/form-data مع الـ boundary.
+  /// الرد: كائن واحد عند رفع ملف واحد، ومصفوفة عند رفع أكثر من ملف.
+  Future<void> _uploadMediaBatch(
+    int postId,
+    List<_PendingUpload> uploads,
+  ) async {
+    if (_isDisposed || uploads.isEmpty) return;
 
-    if (extension == 'm4a') {
-      try {
-        final newPath = file.path.replaceAll('.m4a', '.mp3');
-        final mp3File = File(newPath);
+    final keys = uploads.map((u) => u.key).toList();
+    // اسم يُستخدم في رسائل الخطأ: نوع الملف إن كان واحداً، وإلا "الوسائط"
+    final errorType = keys.length == 1 ? keys.first : 'media';
 
-        final session = await FFmpegKit.execute(
-          '-i ${file.path} -codec:a libmp3lame -qscale:a 2 ${mp3File.path}',
-        );
-        final returnCode = await session.getReturnCode();
-
-        if (ReturnCode.isSuccess(returnCode)) {
-          debugPrint('✅ Converted m4a to mp3: ${mp3File.path}');
-          return mp3File;
-        } else {
-          debugPrint('⚠️ FFmpeg conversion failed, using original');
-          return file;
-        }
-      } catch (e) {
-        debugPrint('⚠️ Conversion failed, using original: $e');
-        return file;
-      }
+    for (final key in keys) {
+      _uploadingMedia[key] = true;
+      _uploadProgressMap[key] = 0.0;
     }
-    return file;
-  }
-
-  Future<void> _uploadMedia(int postId, File file, String type) async {
-    if (_isDisposed) return;
-
-    _uploadingMedia[type] = true;
-    _uploadProgressMap[type] = 0.0;
     _safeNotify();
 
     final dio = DioClient.instance;
 
-    // تحديد نوع API
-    String apiType;
-    switch (type) {
-      case 'thumbnail':
-        apiType = 'image';
-        break;
-      case 'video':
-        apiType = 'video';
-        break;
-      case 'audio':
-        apiType = 'audio';
-        break;
-      default:
-        apiType = type;
-    }
-
-    File uploadFile = file;
-
-    // ✅ إصلاح: تحويل الصوت فقط وليس جميع أنواع الملفات
-    if (type == 'audio' && !file.path.endsWith('.mp3')) {
-      uploadFile = await _convertAudioFile(file);
-    }
-
-    final formData = FormData.fromMap({
-      'type': apiType,
-      'file': await MultipartFile.fromFile(
-        uploadFile.path,
-        filename: path.basename(uploadFile.path),
-        contentType: DioMediaType.parse(_getCorrectMimeType(uploadFile, type)),
-      ),
-      'sort_order': '0',
-    });
-
     try {
+      final formData = FormData();
+      for (var i = 0; i < uploads.length; i++) {
+        final upload = uploads[i];
+        formData.fields.add(MapEntry('media[$i][type]', upload.apiType));
+        formData.fields.add(MapEntry('media[$i][sort_order]', '$i'));
+        formData.files.add(MapEntry(
+          'media[$i][file]',
+          await MultipartFile.fromFile(
+            upload.file.path,
+            filename: path.basename(upload.file.path),
+            contentType: DioMediaType.parse(
+              _getCorrectMimeType(upload.file, upload.apiType),
+            ),
+          ),
+        ));
+      }
+
       final endpoint =
           ApiConstants.replacePostId(ApiConstants.adminPostMedia, postId);
-
-      debugPrint('🌐 Endpoint: $endpoint');
+      debugPrint('🌐 Endpoint: $endpoint (${uploads.length} file(s): $keys)');
 
       final response = await dio.post(
         endpoint,
         data: formData,
         options: Options(
-          headers: {
-            'Accept': 'application/json',
-          },
-          sendTimeout: const Duration(seconds: 120),
-          receiveTimeout: const Duration(seconds: 120),
+          headers: {'Accept': 'application/json'},
+          sendTimeout: const Duration(seconds: 180),
+          receiveTimeout: const Duration(seconds: 180),
         ),
         onSendProgress: (sent, total) {
           if (!_isDisposed && total > 0) {
-            _uploadProgressMap[type] = sent / total;
+            for (final key in keys) {
+              _uploadProgressMap[key] = sent / total;
+            }
             _safeNotify();
           }
         },
@@ -792,62 +785,103 @@ class PostsController extends ChangeNotifier {
 
       if (_isDisposed) return;
 
-      debugPrint('✅ Response status: ${response.statusCode}');
-      debugPrint('📦 Response data: ${response.data}');
-
       final statusCode = response.statusCode ?? 0;
+      debugPrint('✅ Response status: $statusCode');
 
-      // ✅ إصلاح جوهري: أي استجابة ليست 200/201 تُعتبر فشلاً صريحاً
-      // (بعض إعدادات Dio لا ترمي DioException تلقائياً على الأكواد
-      // غير الناجحة، لذا كان الرفع يفشل بصمت دون أي رسالة للمستخدم
-      // ودون منع نشر المنشور).
+      // validateStatus في DioClient لا يرمي على 4xx، لذا نفحص يدوياً
       if (statusCode != 200 && statusCode != 201) {
         final msg = _buildMediaErrorMessage(
           statusCode: statusCode,
           responseData: response.data,
-          type: type,
+          type: errorType,
         );
         _showSnackBar(msg, isError: true);
         throw Exception(msg);
       }
 
-      String? filePath = (response.data is Map)
-          ? (response.data['file_path'] ??
-              response.data['url'] ??
-              response.data['path'])
-          : null;
+      final uploaded = _parseUploadedMedia(response.data);
 
-      if (filePath == null || filePath.isEmpty) {
-        final msg =
-            'فشل رفع ${_getTypeName(type)}: لم يستلم التطبيق مسار الملف من الخادم';
-        _showSnackBar(msg, isError: true);
-        throw Exception(msg);
+      // ✅ تحديث الحقول النصية القديمة على المنشور (thumbnail / video_url /
+      // audio_url) كما كان سابقاً، للتوافق مع النسخ القديمة من تطبيق المريض.
+      for (var i = 0; i < uploads.length; i++) {
+        final upload = uploads[i];
+        final item = _matchUploadedItem(uploaded, upload, i);
+        final filePath = item == null
+            ? null
+            : (item['file_path'] ?? item['url'] ?? item['path'])?.toString();
+
+        if (filePath == null || filePath.isEmpty) {
+          final msg = 'فشل رفع ${_getTypeName(upload.key)}: '
+              'لم يستلم التطبيق بيانات الملف من الخادم';
+          _showSnackBar(msg, isError: true);
+          throw Exception(msg);
+        }
+
+        final fieldName =
+            upload.key == 'thumbnail' ? 'thumbnail' : '${upload.key}_url';
+        await _updatePostField(postId, fieldName, _cleanFilePath(filePath));
+        if (_isDisposed) return;
       }
 
-      String cleanPath = _cleanFilePath(filePath);
-      String fieldName = type == 'thumbnail' ? 'thumbnail' : '${type}_url';
-      await _updatePostField(postId, fieldName, cleanPath);
-      debugPrint('✅ Uploaded: $cleanPath');
-
-      _showSnackBar('تم رفع ${_getTypeName(type)} بنجاح');
+      _showSnackBar(keys.length == 1
+          ? 'تم رفع ${_getTypeName(keys.first)} بنجاح'
+          : 'تم رفع الوسائط بنجاح');
     } on DioException catch (e) {
       debugPrint('❌ Upload error: ${e.response?.statusCode}');
-      debugPrint('   Response: ${e.response?.data}');
-
       final msg = _buildMediaErrorMessage(
         statusCode: e.response?.statusCode,
         responseData: e.response?.data,
-        type: type,
+        type: errorType,
         dioException: e,
       );
       _showSnackBar(msg, isError: true);
       throw Exception(msg);
     } finally {
       if (!_isDisposed) {
-        _uploadingMedia[type] = false;
+        for (final key in keys) {
+          _uploadingMedia[key] = false;
+        }
         _safeNotify();
       }
     }
+  }
+
+  /// يحوّل رد رفع الوسائط إلى قائمة عناصر سواء جاء كائناً واحداً أو
+  /// مصفوفة، مغلّفاً بـ {data: ...} أو لا، أو كائن منشور فيه media.
+  List<Map<String, dynamic>> _parseUploadedMedia(dynamic body) {
+    dynamic data = body;
+    if (data is Map && data.containsKey('data')) data = data['data'];
+    if (data is Map && data['media'] is List) data = data['media'];
+
+    if (data is List) {
+      return data
+          .whereType<Map>()
+          .map((m) => Map<String, dynamic>.from(m))
+          .toList();
+    }
+    if (data is Map) return [Map<String, dynamic>.from(data)];
+    return const [];
+  }
+
+  /// يطابق الملف المرفوع رقم [index] مع عنصره في الرد: بنفس الترتيب
+  /// والنوع إن أمكن، وإلا بأول عنصر من نفس النوع.
+  Map<String, dynamic>? _matchUploadedItem(
+    List<Map<String, dynamic>> items,
+    _PendingUpload upload,
+    int index,
+  ) {
+    if (items.isEmpty) return null;
+    if (items.length == 1) return items.first;
+    for (final item in items) {
+      if (item['sort_order']?.toString() == '$index' &&
+          item['type']?.toString() == upload.apiType) {
+        return item;
+      }
+    }
+    for (final item in items) {
+      if (item['type']?.toString() == upload.apiType) return item;
+    }
+    return index < items.length ? items[index] : null;
   }
 
   /// يبني رسالة خطأ عربية واضحة لفشل رفع ملحق (صورة/فيديو/صوت)
@@ -862,13 +896,25 @@ class PostsController extends ChangeNotifier {
     final typeName = _getTypeName(type);
 
     if (statusCode == 413) {
-      return 'فشل رفع $typeName: حجم الملف كبير جداً على الخادم. '
-          'يرجى اختيار ملف أصغر أو ضغط الفيديو قبل الرفع والمحاولة مرة أخرى.';
+      return 'فشل رفع $typeName: حجم الطلب أكبر من حدود الخادم. '
+          'يرجى اختيار ملف أصغر أو ضغط الفيديو/الصوت قبل الرفع والمحاولة مرة أخرى.';
     }
 
     if (statusCode == 422) {
-      final serverMsg = _extractServerMessage(responseData);
-      return 'فشل رفع $typeName: ${serverMsg.isNotEmpty ? serverMsg : 'بيانات الملف غير صالحة أو صيغته غير مدعومة'}';
+      final code =
+          responseData is Map ? responseData['code']?.toString() : null;
+      final reason = switch (code) {
+        'MEDIA_UPLOAD_FAILED' => 'فشل رفع أحد الملفات، غالباً بسبب حجمه الكبير',
+        'MEDIA_TYPE_MISMATCH' => 'نوع الملف أو امتداده غير مدعوم',
+        'MEDIA_TYPE_REQUIRED' => 'لم يتم تحديد نوع الملف',
+        _ => null,
+      };
+      final details = _extractServerDetails(responseData);
+      final parts = [
+        if (reason != null) reason,
+        if (details.isNotEmpty) details,
+      ];
+      return 'فشل رفع $typeName: ${parts.isNotEmpty ? parts.join('\n') : 'بيانات الملف غير صالحة أو صيغته غير مدعومة'}';
     }
 
     if (statusCode == 415) {
@@ -923,6 +969,26 @@ class PostsController extends ChangeNotifier {
     return '';
   }
 
+  /// يجمع message وكل رسائل errors من رد الخادم (للأخطاء 422) حتى لا
+  /// يُخفى سبب فشل أي ملف.
+  String _extractServerDetails(dynamic responseData) {
+    if (responseData is! Map) return '';
+    final lines = <String>[];
+    final message = responseData['message'];
+    if (message is String && message.isNotEmpty) lines.add(message);
+    final errors = responseData['errors'];
+    if (errors is Map) {
+      for (final value in errors.values) {
+        if (value is List) {
+          lines.addAll(value.map((e) => e.toString()));
+        } else if (value != null) {
+          lines.add(value.toString());
+        }
+      }
+    }
+    return lines.toSet().join('\n');
+  }
+
   // دالة مساعدة للحصول على اسم النوع بالعربية
   String _getTypeName(String type) {
     switch (type) {
@@ -932,6 +998,8 @@ class PostsController extends ChangeNotifier {
         return 'الفيديو';
       case 'audio':
         return 'الصوت';
+      case 'media':
+        return 'الوسائط';
       default:
         return 'الملف';
     }
@@ -1093,22 +1161,16 @@ class PostsController extends ChangeNotifier {
       _safeNotify();
     }
   }
+}
 
-  // ✅ إصلاح: التحقق من نجاح FFmpeg قبل إرجاع الملف
-  Future<File> convertToMp3(File inputFile) async {
-    final outputPath = inputFile.path.replaceAll('.m4a', '.mp3');
+/// ملف جديد بانتظار الرفع ضمن طلب الوسائط الموحّد.
+/// [key] مفتاح الواجهة (thumbnail / video / audio)، و[apiType] النوع
+/// المُرسل للخادم في media[i][type].
+class _PendingUpload {
+  final String key;
+  final File file;
 
-    final session = await FFmpegKit.execute(
-      '-i ${inputFile.path} -codec:a libmp3lame -qscale:a 2 $outputPath',
-    );
+  _PendingUpload(this.key, this.file);
 
-    final returnCode = await session.getReturnCode();
-    if (ReturnCode.isSuccess(returnCode)) {
-      debugPrint('✅ convertToMp3 success: $outputPath');
-      return File(outputPath);
-    } else {
-      debugPrint('⚠️ convertToMp3 failed, returning original');
-      return inputFile;
-    }
-  }
+  String get apiType => key == 'thumbnail' ? 'image' : key;
 }
